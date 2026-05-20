@@ -9,4 +9,5 @@ urlpatterns = [
     path('<int:pk>/', views.CampanaDetailView.as_view(), name='detail'),
     path('<int:pk>/lanzar/', views.CampanaLanzarView.as_view(), name='lanzar'),
     path('<int:pk>/eliminar/', views.CampanaDeleteView.as_view(), name='delete'),
+    path('api/contactos/', views.ContactoBuscarView.as_view(), name='api_contactos'),
 ]

@@ -354,6 +354,78 @@ class LeadKanbanMoveView(LoginRequiredMixin, LeadQuerysetMixin, View):
         return JsonResponse({'ok': True, 'estado': nuevo_estado, 'estado_display': lead.get_estado_display()})
 
 
+class ContactListView(LoginRequiredMixin, View):
+    """Clean contact list view — all leads as a flat address-book style table."""
+    template_name = 'leads/contact_list.html'
+
+    def get(self, request):
+        qs = Lead.objects.select_related('plan_interes', 'agente').order_by('nombre_completo')
+
+        # Search
+        q = request.GET.get('q', '').strip()
+        if q:
+            from django.db.models import Q
+            qs = qs.filter(
+                Q(nombre_completo__icontains=q) |
+                Q(telefono__icontains=q) |
+                Q(email__icontains=q)
+            )
+
+        # Filters
+        plan_id = request.GET.get('plan')
+        if plan_id:
+            qs = qs.filter(plan_interes_id=plan_id)
+        origen = request.GET.get('origen')
+        if origen:
+            qs = qs.filter(origen=origen)
+
+        # Collect all datos_extra keys for column display
+        extra_keys_raw = set()
+        for lead in qs.values_list('datos_extra', flat=True):
+            if isinstance(lead, dict):
+                extra_keys_raw.update(lead.keys())
+        extra_keys = sorted(extra_keys_raw)[:6]  # show max 6 extra columns
+
+        paginator = Paginator(qs, 30)
+        page = paginator.get_page(request.GET.get('page'))
+
+        return render(request, self.template_name, {
+            'contactos': page,
+            'q': q,
+            'plan_id': plan_id,
+            'origen': origen,
+            'planes': Plan.objects.filter(activo=True),
+            'origen_choices': Lead.ORIGEN_CHOICES,
+            'extra_keys': extra_keys,
+            'total': qs.count(),
+        })
+
+
+class ContactSearchAPIView(LoginRequiredMixin, View):
+    """AJAX: search contacts for quick lookup."""
+
+    def get(self, request):
+        from django.db.models import Q
+        q = request.GET.get('q', '').strip()
+        qs = Lead.objects.filter(telefono__startswith='+').order_by('nombre_completo')
+        if q:
+            qs = qs.filter(
+                Q(nombre_completo__icontains=q) |
+                Q(telefono__icontains=q) |
+                Q(email__icontains=q)
+            )
+        results = [
+            {
+                'id': l.pk,
+                'nombre': l.nombre_completo,
+                'telefono': l.telefono,
+                'email': l.email or '',
+            }
+            for l in qs[:20]
+        ]
+        return JsonResponse({'results': results})
+
+
 class LeadCSVImportView(LoginRequiredMixin, UserPassesTestMixin, View):
     template_name = 'leads/lead_import.html'
 

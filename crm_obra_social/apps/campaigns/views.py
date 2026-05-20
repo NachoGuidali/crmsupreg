@@ -3,6 +3,7 @@ import json
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.core.paginator import Paginator
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 from django.views.generic import ListView, DetailView, DeleteView
@@ -11,6 +12,42 @@ from django.urls import reverse_lazy
 from .forms import CampanaForm
 from .models import Campana
 from .tasks import ejecutar_campana
+
+
+class ContactoBuscarView(LoginRequiredMixin, View):
+    """AJAX: search contacts/leads for campaign manual selection."""
+
+    def get(self, request):
+        q = request.GET.get('q', '').strip()
+        page = int(request.GET.get('page', 1))
+        from apps.leads.models import Lead
+        from django.db.models import Q
+        qs = Lead.objects.filter(telefono__startswith='+').select_related('plan_interes')
+        if q:
+            qs = qs.filter(
+                Q(nombre_completo__icontains=q) |
+                Q(telefono__icontains=q) |
+                Q(email__icontains=q)
+            )
+        from django.core.paginator import Paginator
+        paginator = Paginator(qs.order_by('nombre_completo'), 20)
+        pg = paginator.get_page(page)
+        results = [
+            {
+                'id': l.pk,
+                'nombre': l.nombre_completo,
+                'telefono': l.telefono,
+                'email': l.email or '',
+                'plan': str(l.plan_interes) if l.plan_interes else '',
+                'estado': l.get_estado_display(),
+            }
+            for l in pg
+        ]
+        return JsonResponse({
+            'results': results,
+            'has_next': pg.has_next(),
+            'total': paginator.count,
+        })
 
 
 def _get_extra_keys_json():

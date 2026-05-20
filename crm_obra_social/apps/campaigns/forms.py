@@ -38,8 +38,10 @@ class CampanaForm(forms.ModelForm):
         required=False, min_value=1, label='Días sin contacto (mínimo)',
         widget=forms.NumberInput(attrs={'class': 'form-control'}),
     )
-    # variables_mapping is submitted as a JSON string from the dynamic JS form
-    variables_mapping_json = forms.CharField(
+    variables_mapping_json = forms.CharField(required=False, widget=forms.HiddenInput())
+    contactos_ids_json = forms.CharField(required=False, widget=forms.HiddenInput())
+    modo_seleccion = forms.ChoiceField(
+        choices=[('segmento', 'Por segmento'), ('manual', 'Selección manual')],
         required=False,
         widget=forms.HiddenInput(),
     )
@@ -91,6 +93,17 @@ class CampanaForm(forms.ModelForm):
                 instance.variables_mapping = []
         else:
             instance.variables_mapping = []
+
+        instance.modo_seleccion = self.cleaned_data.get('modo_seleccion') or 'segmento'
+        raw_ids = self.cleaned_data.get('contactos_ids_json', '')
+        if raw_ids:
+            try:
+                ids = json.loads(raw_ids)
+                instance.contactos_ids = [int(i) for i in ids if str(i).isdigit()]
+            except (json.JSONDecodeError, TypeError, ValueError):
+                instance.contactos_ids = []
+        else:
+            instance.contactos_ids = []
 
         if commit:
             instance.save()

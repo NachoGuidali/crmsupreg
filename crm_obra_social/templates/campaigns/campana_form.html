@@ -10,6 +10,8 @@
 <form method="post" id="campanaForm">
   {% csrf_token %}
   {{ form.variables_mapping_json }}
+  {{ form.contactos_ids_json }}
+  {{ form.modo_seleccion }}
 
   <div class="row g-4">
     <div class="col-12 col-lg-7">
@@ -21,15 +23,13 @@
           <div class="mb-3">
             <label class="form-label fw-semibold">Nombre de la campaña *</label>
             {{ form.nombre }}
-            {% if form.nombre.errors %}<div class="invalid-feedback d-block">{{ form.nombre.errors.0 }}</div>{% endif %}
           </div>
           <div class="mb-3">
             <label class="form-label fw-semibold">Plantilla HSM *</label>
             {{ form.plantilla }}
             <div class="form-text">Solo se muestran plantillas aprobadas por Meta.</div>
-            {% if form.plantilla.errors %}<div class="invalid-feedback d-block">{{ form.plantilla.errors.0 }}</div>{% endif %}
           </div>
-          <div class="mb-3">
+          <div class="mb-0">
             <label class="form-label fw-semibold">Programar envío (opcional)</label>
             {{ form.fecha_programada }}
             <div class="form-text">Si no completás este campo, la campaña se lanza manualmente.</div>
@@ -39,34 +39,75 @@
 
       <!-- Variable mapping -->
       <div class="card border-0 shadow-sm mb-4" id="variablesMappingCard" style="display:none">
-        <div class="card-header bg-transparent fw-semibold">
-          <i class="bi bi-braces"></i> Mapeo de variables de la plantilla
-        </div>
+        <div class="card-header bg-transparent fw-semibold"><i class="bi bi-braces"></i> Mapeo de variables de la plantilla</div>
         <div class="card-body">
-          <p class="text-muted small">Definí de dónde viene el valor de cada variable <code>{{1}}</code>, <code>{{2}}</code>... para cada lead.</p>
+          <p class="text-muted small">Definí de dónde viene el valor de cada variable <code>{{1}}</code>, <code>{{2}}</code>... para cada contacto.</p>
           <div id="variableRows"></div>
         </div>
       </div>
 
-      <!-- Segment -->
+      <!-- Destinatarios -->
       <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-transparent fw-semibold">Segmento de destinatarios</div>
+        <div class="card-header bg-transparent fw-semibold"><i class="bi bi-people"></i> Destinatarios</div>
         <div class="card-body">
-          <p class="text-muted small">Solo se envía a leads con teléfono <code>+54...</code>. Dejá todos los filtros vacíos para enviar a todos.</p>
-          <div class="row g-3">
-            <div class="col-md-6">
-              <label class="form-label small">Estado del lead</label>{{ form.seg_estado }}
-            </div>
-            <div class="col-md-6">
-              <label class="form-label small">Plan de interés</label>{{ form.seg_plan }}
-            </div>
-            <div class="col-md-6">
-              <label class="form-label small">Provincia</label>{{ form.seg_provincia }}
-            </div>
-            <div class="col-md-6">
-              <label class="form-label small">Días sin contacto (mínimo)</label>{{ form.seg_dias_sin_contacto }}
+
+          <!-- Mode tabs -->
+          <div class="btn-group mb-3 w-100" role="group">
+            <button type="button" class="btn btn-outline-primary active" id="btnModoSegmento" onclick="setModo('segmento')">
+              <i class="bi bi-funnel"></i> Por segmento
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="btnModoManual" onclick="setModo('manual')">
+              <i class="bi bi-ui-checks-grid"></i> Selección manual
+            </button>
+          </div>
+
+          <!-- Segment mode -->
+          <div id="panelSegmento">
+            <p class="text-muted small">Solo se envía a contactos con teléfono válido. Dejá todos los filtros vacíos para enviar a todos.</p>
+            <div class="row g-3">
+              <div class="col-md-6"><label class="form-label small">Estado del lead</label>{{ form.seg_estado }}</div>
+              <div class="col-md-6"><label class="form-label small">Plan de interés</label>{{ form.seg_plan }}</div>
+              <div class="col-md-6"><label class="form-label small">Provincia</label>{{ form.seg_provincia }}</div>
+              <div class="col-md-6"><label class="form-label small">Días sin contacto (mínimo)</label>{{ form.seg_dias_sin_contacto }}</div>
             </div>
           </div>
+
+          <!-- Manual selection mode -->
+          <div id="panelManual" style="display:none">
+            <!-- Search -->
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Buscar contactos</label>
+              <div class="input-group">
+                <input type="text" id="contactoSearch" class="form-control form-control-sm"
+                       placeholder="Nombre, teléfono o email..." autocomplete="off">
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="searchContactos()">
+                  <i class="bi bi-search"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Search results -->
+            <div id="searchResults" class="border rounded mb-3" style="display:none;max-height:280px;overflow-y:auto;">
+              <table class="table table-sm table-hover mb-0">
+                <thead class="table-light sticky-top">
+                  <tr><th style="width:32px"></th><th>Nombre</th><th>Teléfono</th><th>Email</th></tr>
+                </thead>
+                <tbody id="searchResultsBody"></tbody>
+              </table>
+              <div id="loadMoreWrap" class="text-center p-2" style="display:none">
+                <button type="button" class="btn btn-link btn-sm" onclick="loadMoreContactos()">Cargar más...</button>
+              </div>
+            </div>
+
+            <!-- Selected contacts -->
+            <div class="mb-2 d-flex justify-content-between align-items-center">
+              <span class="small fw-semibold">Seleccionados: <span id="selectedCount" class="badge bg-primary">0</span></span>
+              <button type="button" class="btn btn-link btn-sm text-danger p-0" onclick="clearSelection()">Limpiar selección</button>
+            </div>
+            <div id="selectedChips" class="d-flex flex-wrap gap-1 mb-2"></div>
+            <div id="noSelectionWarning" class="text-muted small fst-italic">Buscá y seleccioná contactos arriba.</div>
+          </div>
+
         </div>
       </div>
 
@@ -94,14 +135,17 @@
 </form>
 {% endblock %}
 
-{{ plantillas_data|json_script:"plantillas-data" }}
-
 {% block extra_js %}
+{{ plantillas_data|json_script:"plantillas-data" }}
+{{ extra_keys_json|default:"[]"|json_script:"extra-keys" }}
+
 <script>
 const TEMPLATE_DATA = JSON.parse(document.getElementById('plantillas-data').textContent);
+const EXTRA_KEYS = JSON.parse(document.getElementById('extra-keys').textContent);
+const BUSCAR_URL = "{% url 'campaigns:api_contactos' %}";
 
 const CAMPO_CHOICES = [
-  {val: 'nombre_completo', label: 'Nombre completo del lead'},
+  {val: 'nombre_completo', label: 'Nombre completo'},
   {val: 'email',           label: 'Email'},
   {val: 'plan',            label: 'Plan de interés'},
   {val: 'localidad',       label: 'Localidad'},
@@ -109,9 +153,117 @@ const CAMPO_CHOICES = [
   {val: 'telefono',        label: 'Teléfono'},
 ];
 
-// Extra keys detected from existing leads (dados_extra from imports)
-const EXTRA_KEYS = {{ extra_keys_json|default:'[]'|safe }};
+// ─── Mode switching ─────────────────────────────────────────────────────────
+let currentModo = 'segmento';
 
+function setModo(modo) {
+  currentModo = modo;
+  document.querySelector('[name="modo_seleccion"]').value = modo;
+  document.getElementById('panelSegmento').style.display = modo === 'segmento' ? '' : 'none';
+  document.getElementById('panelManual').style.display  = modo === 'manual'   ? '' : 'none';
+  document.getElementById('btnModoSegmento').classList.toggle('active', modo === 'segmento');
+  document.getElementById('btnModoManual').classList.toggle('active', modo === 'manual');
+}
+
+// ─── Contact search & selection ──────────────────────────────────────────────
+let selectedContacts = {};  // {id: {id, nombre, telefono, email}}
+let currentPage = 1;
+let currentQ = '';
+
+function searchContactos() {
+  const q = document.getElementById('contactoSearch').value.trim();
+  currentQ = q;
+  currentPage = 1;
+  fetchContactos(q, 1, false);
+}
+
+function loadMoreContactos() {
+  currentPage++;
+  fetchContactos(currentQ, currentPage, true);
+}
+
+function fetchContactos(q, page, append) {
+  fetch(`${BUSCAR_URL}?q=${encodeURIComponent(q)}&page=${page}`)
+    .then(r => r.json())
+    .then(data => {
+      const tbody = document.getElementById('searchResultsBody');
+      if (!append) tbody.innerHTML = '';
+
+      data.results.forEach(c => {
+        const already = selectedContacts[c.id] ? 'table-success' : '';
+        const tr = document.createElement('tr');
+        tr.className = already;
+        tr.id = `row-${c.id}`;
+        tr.innerHTML = `
+          <td><input type="checkbox" class="form-check-input contact-cb" data-id="${c.id}"
+               data-nombre="${c.nombre}" data-telefono="${c.telefono}" data-email="${c.email}"
+               ${selectedContacts[c.id] ? 'checked' : ''}
+               onchange="toggleContact(this)"></td>
+          <td class="small fw-semibold">${c.nombre}</td>
+          <td class="small font-monospace">${c.telefono}</td>
+          <td class="small text-muted">${c.email || '—'}</td>`;
+        tbody.appendChild(tr);
+      });
+
+      document.getElementById('searchResults').style.display = '';
+      document.getElementById('loadMoreWrap').style.display = data.has_next ? '' : 'none';
+    });
+}
+
+function toggleContact(cb) {
+  const id = parseInt(cb.dataset.id);
+  const row = document.getElementById(`row-${id}`);
+  if (cb.checked) {
+    selectedContacts[id] = {id, nombre: cb.dataset.nombre, telefono: cb.dataset.telefono, email: cb.dataset.email};
+    if (row) row.classList.add('table-success');
+  } else {
+    delete selectedContacts[id];
+    if (row) row.classList.remove('table-success');
+  }
+  renderSelectedChips();
+  updateContactosJson();
+}
+
+function removeContact(id) {
+  delete selectedContacts[id];
+  const cb = document.querySelector(`.contact-cb[data-id="${id}"]`);
+  if (cb) { cb.checked = false; document.getElementById(`row-${id}`)?.classList.remove('table-success'); }
+  renderSelectedChips();
+  updateContactosJson();
+}
+
+function clearSelection() {
+  selectedContacts = {};
+  document.querySelectorAll('.contact-cb').forEach(cb => { cb.checked = false; });
+  document.querySelectorAll('[id^="row-"]').forEach(r => r.classList.remove('table-success'));
+  renderSelectedChips();
+  updateContactosJson();
+}
+
+function renderSelectedChips() {
+  const container = document.getElementById('selectedChips');
+  const count = Object.keys(selectedContacts).length;
+  document.getElementById('selectedCount').textContent = count;
+  document.getElementById('noSelectionWarning').style.display = count === 0 ? '' : 'none';
+  container.innerHTML = Object.values(selectedContacts).map(c => `
+    <span class="badge bg-primary d-inline-flex align-items-center gap-1" style="font-size:.8rem;padding:5px 8px;">
+      ${c.nombre}
+      <button type="button" class="btn-close btn-close-white" style="width:.5rem;height:.5rem;"
+              onclick="removeContact(${c.id})"></button>
+    </span>`).join('');
+}
+
+function updateContactosJson() {
+  document.querySelector('[name="contactos_ids_json"]').value =
+    JSON.stringify(Object.keys(selectedContacts).map(Number));
+}
+
+// Enter key triggers search
+document.getElementById('contactoSearch').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); searchContactos(); }
+});
+
+// ─── Template variable mapping ───────────────────────────────────────────────
 let currentMapping = [];
 
 function buildVariableRows(template) {
@@ -127,12 +279,13 @@ function buildVariableRows(template) {
   }
 
   card.style.display = '';
-  currentMapping = template.variables.map((v, i) => ({tipo: 'campo', valor: 'nombre_completo'}));
+  currentMapping = template.variables.map(() => ({tipo: 'campo', valor: 'nombre_completo'}));
+
+  const extraOpts = EXTRA_KEYS.length > 0
+    ? EXTRA_KEYS.map(k => `<option value="${k}">${k} (dato extra)</option>`).join('')
+    : '<option value="" disabled>— importá un archivo primero —</option>';
 
   template.variables.forEach((varName, i) => {
-    const extraOpts = EXTRA_KEYS.length > 0
-      ? EXTRA_KEYS.map(k => `<option value="${k}">${k} (dato extra)</option>`).join('')
-      : '<option value="" disabled>— importá un archivo primero —</option>';
     const row = document.createElement('div');
     row.className = 'mb-3 p-2 border rounded bg-light';
     row.innerHTML = `
@@ -153,7 +306,7 @@ function buildVariableRows(template) {
             ${extraOpts}
           </select>
           <input type="text" class="form-control form-control-sm var-extra-manual d-none" data-idx="${i}" placeholder="Nombre de la columna extra (ej: empresa)">
-          <input type="text" class="form-control form-control-sm var-fijo d-none" data-idx="${i}" placeholder="Texto igual para todos los destinatarios">
+          <input type="text" class="form-control form-control-sm var-fijo d-none" data-idx="${i}" placeholder="Texto igual para todos">
         </div>
       </div>`;
     container.appendChild(row);
@@ -177,33 +330,13 @@ function buildVariableRows(template) {
       updateMappingJson();
     });
   });
-
-  container.querySelectorAll('.var-campo').forEach(sel => {
-    sel.addEventListener('change', function() {
+  container.querySelectorAll('.var-campo,.var-extra,.var-extra-manual,.var-fijo').forEach(el => {
+    el.addEventListener('change', function() {
       const idx = parseInt(this.dataset.idx);
       currentMapping[idx].valor = this.value;
       updateMappingJson();
     });
-  });
-
-  container.querySelectorAll('.var-extra').forEach(sel => {
-    sel.addEventListener('change', function() {
-      const idx = parseInt(this.dataset.idx);
-      currentMapping[idx].valor = this.value;
-      updateMappingJson();
-    });
-  });
-
-  container.querySelectorAll('.var-extra-manual').forEach(inp => {
-    inp.addEventListener('input', function() {
-      const idx = parseInt(this.dataset.idx);
-      currentMapping[idx].valor = this.value;
-      updateMappingJson();
-    });
-  });
-
-  container.querySelectorAll('.var-fijo').forEach(inp => {
-    inp.addEventListener('input', function() {
+    el.addEventListener('input', function() {
       const idx = parseInt(this.dataset.idx);
       currentMapping[idx].valor = this.value;
       updateMappingJson();
@@ -217,13 +350,13 @@ function updateMappingJson() {
   document.querySelector('[name="variables_mapping_json"]').value = JSON.stringify(currentMapping);
 }
 
+// ─── Template preview ────────────────────────────────────────────────────────
 function updateTemplatePreview(template) {
   const card = document.getElementById('templatePreviewCard');
   if (!template) { card.style.display = 'none'; return; }
   card.style.display = '';
 
-  const bodyEl = document.getElementById('prevBody');
-  bodyEl.textContent = template.cuerpoRaw;
+  document.getElementById('prevBody').textContent = template.cuerpoRaw;
 
   const headerEl = document.getElementById('prevHeader');
   if (template.header_tipo !== 'none' && template.header_contenido) {
@@ -243,15 +376,15 @@ function updateTemplatePreview(template) {
   ).join('');
 }
 
+// ─── Wire up template select ─────────────────────────────────────────────────
 const plantillaSelect = document.getElementById('id_plantilla');
 if (plantillaSelect) {
   plantillaSelect.addEventListener('change', function() {
-    const pk = parseInt(this.value);
+    const pk = String(this.value);
     const tpl = TEMPLATE_DATA[pk] || null;
     buildVariableRows(tpl);
     updateTemplatePreview(tpl);
   });
-  // Trigger on load if already selected (edit mode)
   if (plantillaSelect.value) plantillaSelect.dispatchEvent(new Event('change'));
 }
 </script>

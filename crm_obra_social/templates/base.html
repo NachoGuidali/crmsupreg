@@ -33,6 +33,11 @@
           </a>
         </li>
         <li class="nav-item">
+          <a class="nav-link {% block nav_contacts %}{% endblock %}" href="{% url 'leads:contact_list' %}">
+            <i class="bi bi-person-lines-fill"></i> Contactos
+          </a>
+        </li>
+        <li class="nav-item">
           <a class="nav-link {% block nav_kanban %}{% endblock %}" href="{% url 'leads:kanban' %}">
             <i class="bi bi-kanban"></i> Kanban
           </a>

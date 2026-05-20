@@ -14,10 +14,24 @@ class Campana(models.Model):
         (STATUS_COMPLETADA, 'Completada'),
     ]
 
+    MODO_SEGMENTO = 'segmento'
+    MODO_MANUAL = 'manual'
+    MODO_CHOICES = [
+        (MODO_SEGMENTO, 'Por segmento (filtros automáticos)'),
+        (MODO_MANUAL, 'Selección manual de contactos'),
+    ]
+
     nombre = models.CharField(max_length=200)
     plantilla = models.ForeignKey('whatsapp.PlantillaHSM', on_delete=models.PROTECT)
+    modo_seleccion = models.CharField(max_length=10, choices=MODO_CHOICES, default=MODO_SEGMENTO)
     # Segment filters stored as JSON for flexibility
     filtros_segmento = models.JSONField(default=dict, blank=True, help_text='Filtros de segmento: estado, plan_id, provincia, dias_sin_contacto')
+    # Manual contact selection: list of lead PKs
+    contactos_ids = models.JSONField(
+        default=list, blank=True,
+        verbose_name='Contactos seleccionados',
+        help_text='Lista de IDs de leads seleccionados manualmente.',
+    )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_BORRADOR)
     fecha_programada = models.DateTimeField(null=True, blank=True)
     creado_por = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
@@ -48,7 +62,13 @@ class Campana(models.Model):
         from datetime import timedelta
         from apps.leads.models import Lead
         from django.utils import timezone
-        qs = Lead.objects.filter(telefono__startswith='+54')
+
+        # Manual selection: use exact list of IDs
+        if self.modo_seleccion == self.MODO_MANUAL and self.contactos_ids:
+            return Lead.objects.filter(pk__in=self.contactos_ids, telefono__startswith='+')
+
+        # Segment-based filtering
+        qs = Lead.objects.filter(telefono__startswith='+')
         f = self.filtros_segmento
         if f.get('estado'):
             qs = qs.filter(estado=f['estado'])
