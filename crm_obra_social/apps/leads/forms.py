@@ -1,0 +1,90 @@
+import csv
+import io
+
+from django import forms
+from django.core.exceptions import ValidationError
+
+from .models import Lead, Plan
+
+
+class LeadForm(forms.ModelForm):
+    class Meta:
+        model = Lead
+        fields = [
+            'nombre_completo', 'dni', 'fecha_nacimiento', 'telefono', 'email',
+            'localidad', 'provincia', 'plan_interes', 'grupo_familiar',
+            'origen', 'agente', 'estado', 'prioridad', 'notas',
+        ]
+        widgets = {
+            'fecha_nacimiento': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+            'notas': forms.Textarea(attrs={'rows': 3, 'class': 'form-control'}),
+        }
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name, field in self.fields.items():
+            if not isinstance(field.widget, (forms.Select, forms.Textarea, forms.DateInput)):
+                field.widget.attrs['class'] = 'form-control'
+            elif isinstance(field.widget, forms.Select):
+                field.widget.attrs['class'] = 'form-select'
+
+        # Agents can't reassign themselves
+        if user and not user.can_see_all_leads:
+            self.fields.pop('agente', None)
+            self.fields.pop('estado', None) if 'estado' in self.fields else None
+
+        self.fields['plan_interes'].queryset = Plan.objects.filter(activo=True)
+
+
+class LeadFilterForm(forms.Form):
+    q = forms.CharField(required=False, label='Buscar', widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Nombre, DNI o teléfono'}))
+    estado = forms.ChoiceField(required=False, choices=[('', 'Todos los estados')] + Lead.ESTADO_CHOICES, widget=forms.Select(attrs={'class': 'form-select'}))
+    plan = forms.ModelChoiceField(queryset=Plan.objects.filter(activo=True), required=False, empty_label='Todos los planes', widget=forms.Select(attrs={'class': 'form-select'}))
+    provincia = forms.CharField(required=False, widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Provincia'}))
+    origen = forms.ChoiceField(required=False, choices=[('', 'Todos los orígenes')] + Lead.ORIGEN_CHOICES, widget=forms.Select(attrs={'class': 'form-select'}))
+    prioridad = forms.ChoiceField(required=False, choices=[('', 'Todas las prioridades')] + Lead.PRIORIDAD_CHOICES, widget=forms.Select(attrs={'class': 'form-select'}))
+    fecha_desde = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}))
+    fecha_hasta = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}))
+    agente = forms.IntegerField(required=False, widget=forms.HiddenInput())
+
+
+IMPORT_ACCEPTED_EXTENSIONS = ('.csv', '.xlsx', '.xls')
+
+
+class LeadImportForm(forms.Form):
+    archivo = forms.FileField(
+        label='Archivo de contactos',
+        widget=forms.FileInput(attrs={'class': 'form-control', 'accept': '.csv,.xlsx,.xls'}),
+        help_text='CSV o Excel (.xlsx). Columnas requeridas: nombre_completo (o name) y telefono.',
+    )
+    actualizar_existentes = forms.BooleanField(
+        required=False,
+        initial=True,
+        label='Actualizar contactos existentes (mismo teléfono)',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+    )
+    asignar_agente = forms.BooleanField(
+        required=False,
+        initial=False,
+        label='Asignarme como agente en los leads nuevos',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+    )
+
+    def clean_archivo(self):
+        f = self.cleaned_data['archivo']
+        ext = f.name.lower()
+        if not any(ext.endswith(e) for e in IMPORT_ACCEPTED_EXTENSIONS):
+            raise ValidationError('Formato no soportado. Usá .csv, .xlsx o .xls.')
+        max_mb = 10
+        if f.size > max_mb * 1024 * 1024:
+            raise ValidationError(f'El archivo no puede superar {max_mb} MB.')
+        return f
+
+
+# Keep old name as alias for any existing references
+LeadCSVImportForm = LeadImportForm
+
+
+class EstadoChangeForm(forms.Form):
+    estado = forms.ChoiceField(choices=Lead.ESTADO_CHOICES, widget=forms.Select(attrs={'class': 'form-select'}))
+    nota = forms.CharField(required=False, widget=forms.Textarea(attrs={'rows': 2, 'class': 'form-control', 'placeholder': 'Nota opcional sobre el cambio de estado'}))

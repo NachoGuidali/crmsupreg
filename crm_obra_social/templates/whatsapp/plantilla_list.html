@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Plantillas HSM{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0 fw-bold"><i class="bi bi-file-text text-primary"></i> Plantillas HSM</h4>
+  <a href="{% url 'whatsapp:plantilla_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> Nueva plantilla</a>
+</div>
+
+<div class="alert alert-info small py-2">
+  <strong>Flujo:</strong>
+  Creá la plantilla aquí → <strong>Enviá a Meta</strong> (botón abajo) → Esperá aprobación → <strong>Sync estado</strong> para confirmarlo → Usá en campañas o chats.
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Nombre</th>
+          <th>Categoría</th>
+          <th>Header</th>
+          <th>Botones</th>
+          <th>Estado</th>
+          <th>Último sync</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in plantillas %}
+        <tr>
+          <td>
+            <div class="fw-semibold">{{ p.nombre }}</div>
+            {% if p.nombre_meta %}<div class="text-muted small font-monospace">{{ p.nombre_meta }}</div>{% endif %}
+          </td>
+          <td><span class="badge bg-secondary">{{ p.get_categoria_display }}</span></td>
+          <td>
+            {% if p.header_tipo != 'none' %}
+            <span class="badge bg-info text-dark">{{ p.get_header_tipo_display }}</span>
+            {% else %}<span class="text-muted small">—</span>{% endif %}
+          </td>
+          <td>
+            {% if p.botones %}
+            <span class="badge bg-primary">{{ p.botones|length }} botón{% if p.botones|length != 1 %}es{% endif %}</span>
+            {% else %}<span class="text-muted small">—</span>{% endif %}
+          </td>
+          <td>
+            <span class="badge bg-{% if p.status == 'APPROVED' %}success{% elif p.status == 'REJECTED' %}danger{% else %}warning text-dark{% endif %}">
+              {{ p.get_status_display }}
+            </span>
+          </td>
+          <td class="text-muted small">{{ p.ultimo_sync_at|date:"d/m H:i"|default:"—" }}</td>
+          <td>
+            <div class="d-flex gap-1 flex-wrap">
+              <a href="{% url 'whatsapp:plantilla_update' p.pk %}" class="btn btn-sm btn-outline-secondary" title="Editar"><i class="bi bi-pencil"></i></a>
+
+              {% if p.status == 'PENDING' and not p.meta_template_id %}
+              <form method="post" action="{% url 'whatsapp:plantilla_submit' p.pk %}" class="d-inline"
+                    onsubmit="return confirm('¿Enviar esta plantilla a Meta para aprobación?')">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-primary" title="Enviar a Meta">
+                  <i class="bi bi-send"></i> Enviar
+                </button>
+              </form>
+              {% endif %}
+
+              {% if p.nombre_meta or p.meta_template_id %}
+              <form method="post" action="{% url 'whatsapp:plantilla_sync' p.pk %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-info" title="Sync estado desde Meta">
+                  <i class="bi bi-arrow-repeat"></i>
+                </button>
+              </form>
+              {% endif %}
+
+              <a href="{% url 'whatsapp:plantilla_delete' p.pk %}" class="btn btn-sm btn-outline-danger" title="Eliminar"><i class="bi bi-trash"></i></a>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-center text-muted py-4">Sin plantillas registradas.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
