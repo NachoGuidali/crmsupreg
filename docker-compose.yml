@@ -34,13 +34,13 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DJANGO_SETTINGS_MODULE: config.settings.local
+      DJANGO_SETTINGS_MODULE: config.settings.production
     volumes:
       - ./crm_obra_social:/app
       - media_data:/app/media
-      - static_data:/app/staticfiles
+      - ./crm_obra_social/staticfiles:/app/staticfiles
     ports:
-      - "8000:8000"
+      - "8001:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -58,7 +58,7 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DJANGO_SETTINGS_MODULE: config.settings.local
+      DJANGO_SETTINGS_MODULE: config.settings.production
     volumes:
       - ./crm_obra_social:/app
       - media_data:/app/media
@@ -75,7 +75,7 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DJANGO_SETTINGS_MODULE: config.settings.local
+      DJANGO_SETTINGS_MODULE: config.settings.production
     volumes:
       - ./crm_obra_social:/app
     depends_on:
@@ -89,4 +89,3 @@ volumes:
   postgres_data:
   redis_data:
   media_data:
-  static_data:
