@@ -14,6 +14,11 @@
     <a href="{% url 'quotes:create' %}?lead={{ lead.pk }}" class="btn btn-outline-success btn-sm"><i class="bi bi-file-earmark-text"></i> Cotización</a>
     {% if lead.conversacion_whatsapp %}
     <a href="{% url 'whatsapp:conversacion' lead.conversacion_whatsapp.pk %}" class="btn btn-success btn-sm"><i class="bi bi-whatsapp"></i> WhatsApp</a>
+    {% else %}
+    <form method="post" action="{% url 'whatsapp:iniciar_conversacion' lead.pk %}" class="d-inline">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-outline-success btn-sm"><i class="bi bi-whatsapp"></i> Iniciar conversación</button>
+    </form>
     {% endif %}
     {% if request.user.can_see_all_leads %}
     <a href="{% url 'leads:delete' lead.pk %}" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i></a>
@@ -120,6 +125,11 @@
       <div class="tab-pane fade" id="tabMensajes">
         {% if lead.conversacion_whatsapp %}
         <a href="{% url 'whatsapp:conversacion' lead.conversacion_whatsapp.pk %}" class="btn btn-sm btn-success mb-2"><i class="bi bi-whatsapp"></i> Abrir chat completo</a>
+        {% else %}
+        <form method="post" action="{% url 'whatsapp:iniciar_conversacion' lead.pk %}" class="mb-2">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-sm btn-outline-success"><i class="bi bi-whatsapp"></i> Iniciar conversación por WhatsApp</button>
+        </form>
         {% endif %}
         {% for msg in mensajes %}
         <div class="d-flex {% if msg.direccion == 'out' %}justify-content-end{% endif %} mb-1">

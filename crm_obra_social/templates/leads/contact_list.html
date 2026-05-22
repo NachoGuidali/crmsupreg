@@ -10,6 +10,7 @@
     <span class="text-muted fs-6 fw-normal ms-1">({{ total }})</span>
   </h4>
   <div class="d-flex gap-2 flex-wrap">
+    <a href="{% url 'leads:create' %}?from=contacts" class="btn btn-primary btn-sm"><i class="bi bi-person-plus"></i> Nuevo contacto</a>
     <a href="{% url 'leads:csv_import' %}" class="btn btn-outline-primary btn-sm"><i class="bi bi-cloud-upload"></i> Importar</a>
     <a href="{% url 'leads:csv_export' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-download"></i> Exportar CSV</a>
     <a href="{% url 'campaigns:create' %}" class="btn btn-success btn-sm"><i class="bi bi-megaphone"></i> Nueva campaña</a>

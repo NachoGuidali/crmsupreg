@@ -261,7 +261,9 @@ class LeadCreateView(LoginRequiredMixin, CreateView):
             cambiado_por=self.request.user,
             nota='Lead creado.',
         )
-        messages.success(self.request, 'Lead creado correctamente.')
+        messages.success(self.request, 'Contacto creado correctamente.')
+        if self.request.POST.get('from') == 'contacts':
+            return redirect('leads:contact_list')
         return redirect('leads:detail', pk=lead.pk)
 
 

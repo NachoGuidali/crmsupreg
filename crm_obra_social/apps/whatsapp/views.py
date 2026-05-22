@@ -480,3 +480,38 @@ class PlantillaSyncView(LoginRequiredMixin, View):
         except Exception as e:
             messages.error(request, f'Error al consultar Meta: {e}')
         return redirect('whatsapp:plantilla_list')
+
+
+class IniciarConversacionView(LoginRequiredMixin, View):
+    """Create a Conversacion for a lead and redirect to the chat."""
+
+    def post(self, request, lead_pk):
+        from apps.leads.models import Lead
+        lead = get_object_or_404(Lead, pk=lead_pk)
+
+        if not lead.telefono or not lead.telefono.startswith('+'):
+            messages.error(request, 'El lead no tiene un número válido en formato internacional (+...).')
+            return redirect('leads:detail', pk=lead_pk)
+
+        conv, created = Conversacion.objects.get_or_create(
+            telefono=lead.telefono,
+            defaults={
+                'lead': lead,
+                'nombre_contacto': lead.nombre_completo,
+            }
+        )
+        if not created and conv.lead_id is None:
+            conv.lead = lead
+            conv.nombre_contacto = conv.nombre_contacto or lead.nombre_completo
+            conv.save(update_fields=['lead', 'nombre_contacto'])
+
+        if created:
+            messages.success(
+                request,
+                f'Conversación creada con {lead.nombre_completo}. '
+                'La ventana de 24 hs está cerrada — usá una plantilla HSM para el primer mensaje.'
+            )
+        else:
+            messages.info(request, 'Ya existe una conversación con este contacto.')
+
+        return redirect('whatsapp:conversacion', pk=conv.pk)
