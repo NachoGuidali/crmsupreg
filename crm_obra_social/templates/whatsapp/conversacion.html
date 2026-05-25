@@ -332,7 +332,7 @@ if (plantillaSelect) {
     const opt = plantillaSelect.options[plantillaSelect.selectedIndex];
     let text = opt.dataset.cuerpo || '';
     document.querySelectorAll('.var-input').forEach((inp, i) => {
-      text = text.replace(`{{${i + 1}}}`, inp.value || `{{${i + 1}}}`);
+      text = text.replace('{{' + (i + 1) + '}}', inp.value || '{{' + (i + 1) + '}}');
     });
     document.getElementById('plantillaPreview').textContent = text;
   }
