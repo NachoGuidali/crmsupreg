@@ -2,6 +2,58 @@ from django.conf import settings
 from django.core.validators import RegexValidator
 from django.db import models
 from django.utils import timezone
+from django.utils.text import slugify
+
+
+class CampoPersonalizado(models.Model):
+    TIPO_TEXTO    = 'texto'
+    TIPO_NUMERO   = 'numero'
+    TIPO_FECHA    = 'fecha'
+    TIPO_BOOLEANO = 'booleano'
+    TIPO_LISTA    = 'lista'
+    TIPO_CHOICES = [
+        ('texto',    'Texto libre'),
+        ('numero',   'Número'),
+        ('fecha',    'Fecha'),
+        ('booleano', 'Sí / No'),
+        ('lista',    'Lista de opciones'),
+    ]
+
+    ALCANCE_LEADS    = 'leads'
+    ALCANCE_CLIENTES = 'clientes'
+    ALCANCE_AMBOS    = 'ambos'
+    ALCANCE_CHOICES = [
+        ('leads',    'Solo Leads'),
+        ('clientes', 'Solo Clientes'),
+        ('ambos',    'Leads y Clientes'),
+    ]
+
+    nombre   = models.CharField(max_length=100, unique=True, verbose_name='Nombre')
+    slug     = models.SlugField(max_length=100, unique=True, verbose_name='Clave interna', editable=False)
+    tipo     = models.CharField(max_length=20, choices=TIPO_CHOICES, default=TIPO_TEXTO, verbose_name='Tipo')
+    alcance  = models.CharField(max_length=20, choices=ALCANCE_CHOICES, default=ALCANCE_AMBOS, verbose_name='Aplica a')
+    opciones = models.JSONField(default=list, blank=True, verbose_name='Opciones (para Lista)')
+    requerido = models.BooleanField(default=False, verbose_name='Requerido')
+    orden    = models.PositiveIntegerField(default=0, verbose_name='Orden')
+    activo   = models.BooleanField(default=True, verbose_name='Activo')
+
+    class Meta:
+        ordering = ['orden', 'nombre']
+        verbose_name = 'Campo personalizado'
+        verbose_name_plural = 'Campos personalizados'
+
+    def __str__(self):
+        return self.nombre
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base = slugify(self.nombre)
+            slug, n = base, 1
+            while CampoPersonalizado.objects.filter(slug=slug).exclude(pk=self.pk).exists():
+                slug = f'{base}-{n}'
+                n += 1
+            self.slug = slug
+        super().save(*args, **kwargs)
 
 
 class Plan(models.Model):

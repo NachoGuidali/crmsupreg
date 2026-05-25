@@ -22,6 +22,7 @@ INSTALLED_APPS = [
     # Local apps
     'apps.users',
     'apps.leads',
+    'apps.clientes',
     'apps.tasks',
     'apps.quotes',
     'apps.whatsapp',

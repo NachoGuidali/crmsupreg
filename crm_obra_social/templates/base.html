@@ -38,6 +38,11 @@
           </a>
         </li>
         <li class="nav-item">
+          <a class="nav-link {% block nav_clientes %}{% endblock %}" href="{% url 'clientes:list' %}">
+            <i class="bi bi-person-check-fill"></i> Clientes
+          </a>
+        </li>
+        <li class="nav-item">
           <a class="nav-link {% block nav_kanban %}{% endblock %}" href="{% url 'leads:kanban' %}">
             <i class="bi bi-kanban"></i> Kanban
           </a>
@@ -74,6 +79,8 @@
             <li><a class="dropdown-item" href="{% url 'reports_detail:conversion' %}"><i class="bi bi-funnel"></i> Reporte conversión</a></li>
             <li><a class="dropdown-item" href="{% url 'reports_detail:mensajes' %}"><i class="bi bi-chat-dots"></i> Reporte mensajes</a></li>
             <li><a class="dropdown-item" href="{% url 'users:list' %}"><i class="bi bi-person-gear"></i> Usuarios</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="{% url 'leads:campos' %}"><i class="bi bi-sliders"></i> Campos personalizados</a></li>
           </ul>
         </li>
         {% endif %}

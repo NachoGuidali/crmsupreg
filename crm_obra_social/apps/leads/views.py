@@ -14,8 +14,8 @@ from django.views import View
 from django.views.generic import CreateView, UpdateView, DetailView, DeleteView
 
 from apps.users.models import User
-from .forms import LeadForm, LeadFilterForm, LeadImportForm, EstadoChangeForm
-from .models import Lead, HistorialEstado, Plan
+from .forms import LeadForm, LeadFilterForm, LeadImportForm, EstadoChangeForm, CampoPersonalizadoForm
+from .models import Lead, HistorialEstado, Plan, CampoPersonalizado
 
 # Columns that are recognized as standard Lead fields (case-insensitive)
 _KNOWN_COLUMNS = {
@@ -282,6 +282,10 @@ class LeadDetailView(LoginRequiredMixin, LeadQuerysetMixin, DetailView):
         ctx['tareas'] = lead.tareas.select_related('agente').order_by('-fecha_programada')[:10]
         ctx['cotizaciones'] = lead.cotizaciones.order_by('-created_at')[:5]
         ctx['mensajes'] = lead.mensajes_whatsapp.order_by('-timestamp')[:20]
+        ctx['campos'] = CampoPersonalizado.objects.filter(
+            activo=True,
+            alcance__in=[CampoPersonalizado.ALCANCE_LEADS, CampoPersonalizado.ALCANCE_AMBOS]
+        )
         return ctx
 
 
@@ -314,6 +318,120 @@ class LeadDeleteView(LoginRequiredMixin, UserPassesTestMixin, DeleteView):
     def form_valid(self, form):
         messages.success(self.request, 'Lead eliminado.')
         return super().form_valid(form)
+
+
+class LeadUpdateCamposView(LoginRequiredMixin, LeadQuerysetMixin, View):
+    """Save custom field values for a lead."""
+
+    def post(self, request, pk):
+        lead = get_object_or_404(self.get_base_queryset(), pk=pk)
+        campos = CampoPersonalizado.objects.filter(
+            activo=True,
+            alcance__in=[CampoPersonalizado.ALCANCE_LEADS, CampoPersonalizado.ALCANCE_AMBOS]
+        )
+        extra = dict(lead.datos_extra or {})
+        for campo in campos:
+            if campo.tipo == CampoPersonalizado.TIPO_BOOLEANO:
+                extra[campo.slug] = bool(request.POST.get(f'campo_{campo.slug}'))
+            else:
+                val = request.POST.get(f'campo_{campo.slug}', '').strip()
+                if val:
+                    extra[campo.slug] = val
+                else:
+                    extra.pop(campo.slug, None)
+        lead.datos_extra = extra
+        lead.save(update_fields=['datos_extra'])
+        messages.success(request, 'Campos guardados.')
+        return redirect('leads:detail', pk=pk)
+
+
+class LeadConvertirView(LoginRequiredMixin, UserPassesTestMixin, View):
+    """Convert a lead to a cliente (separate model). Deletes the lead."""
+
+    def test_func(self):
+        return self.request.user.can_see_all_leads
+
+    def post(self, request, pk):
+        lead = get_object_or_404(Lead, pk=pk)
+        from apps.clientes.models import Cliente
+        cliente = Cliente.objects.create(
+            nombre_completo=lead.nombre_completo,
+            dni=lead.dni,
+            fecha_nacimiento=lead.fecha_nacimiento,
+            telefono=lead.telefono,
+            email=lead.email,
+            localidad=lead.localidad,
+            provincia=lead.provincia,
+            plan=lead.plan_interes,
+            grupo_familiar=lead.grupo_familiar,
+            agente=lead.agente,
+            notas=lead.notas,
+            datos_extra=lead.datos_extra or {},
+        )
+        lead.delete()
+        messages.success(request, f'{cliente.nombre_completo} convertido a Cliente correctamente.')
+        return redirect('clientes:detail', pk=cliente.pk)
+
+
+# ── Campos personalizados CRUD ────────────────────────────
+
+class SupervisorRequiredMixin(UserPassesTestMixin):
+    def test_func(self):
+        return self.request.user.can_see_all_leads
+
+
+class CampoListView(LoginRequiredMixin, SupervisorRequiredMixin, View):
+    template_name = 'leads/campo_list.html'
+
+    def get(self, request):
+        campos = CampoPersonalizado.objects.all()
+        return render(request, self.template_name, {'campos': campos})
+
+
+class CampoCreateView(LoginRequiredMixin, SupervisorRequiredMixin, View):
+    template_name = 'leads/campo_form.html'
+
+    def get(self, request):
+        return render(request, self.template_name, {'form': CampoPersonalizadoForm()})
+
+    def post(self, request):
+        form = CampoPersonalizadoForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Campo creado.')
+            return redirect('leads:campos')
+        return render(request, self.template_name, {'form': form})
+
+
+class CampoUpdateView(LoginRequiredMixin, SupervisorRequiredMixin, View):
+    template_name = 'leads/campo_form.html'
+
+    def get(self, request, pk):
+        campo = get_object_or_404(CampoPersonalizado, pk=pk)
+        return render(request, self.template_name, {'form': CampoPersonalizadoForm(instance=campo), 'campo': campo})
+
+    def post(self, request, pk):
+        campo = get_object_or_404(CampoPersonalizado, pk=pk)
+        form = CampoPersonalizadoForm(request.POST, instance=campo)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Campo actualizado.')
+            return redirect('leads:campos')
+        return render(request, self.template_name, {'form': form, 'campo': campo})
+
+
+class CampoDeleteView(LoginRequiredMixin, SupervisorRequiredMixin, DeleteView):
+    model = CampoPersonalizado
+    template_name = 'leads/campo_confirm_delete.html'
+    success_url = reverse_lazy('leads:campos')
+
+
+class CampoToggleView(LoginRequiredMixin, SupervisorRequiredMixin, View):
+    def post(self, request, pk):
+        campo = get_object_or_404(CampoPersonalizado, pk=pk)
+        campo.activo = not campo.activo
+        campo.save(update_fields=['activo'])
+        return redirect('leads:campos')
 
 
 class LeadEstadoChangeView(LoginRequiredMixin, LeadQuerysetMixin, View):

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load crm_tags %}
 {% block title %}{{ lead.nombre_completo }} — Lead{% endblock %}
 {% block nav_leads %}active{% endblock %}
 
@@ -21,6 +22,11 @@
     </form>
     {% endif %}
     {% if request.user.can_see_all_leads %}
+    <form method="post" action="{% url 'leads:convertir' lead.pk %}" class="d-inline"
+          onsubmit="return confirm('¿Convertir a {{ lead.nombre_completo }} en Cliente? El lead será eliminado.')">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-person-check"></i> Convertir a Cliente</button>
+    </form>
     <a href="{% url 'leads:delete' lead.pk %}" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i></a>
     {% endif %}
   </div>
@@ -80,6 +86,7 @@
       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabCotizaciones">Cotizaciones ({{ cotizaciones|length }})</button></li>
       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabMensajes">Mensajes ({{ mensajes|length }})</button></li>
       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabHistorial">Historial</button></li>
+      {% if campos %}<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabCampos">Campos ({{ campos|length }})</button></li>{% endif %}
     </ul>
     <div class="tab-content border border-top-0 rounded-bottom p-3 bg-white">
 
@@ -161,6 +168,53 @@
           {% endfor %}
         </ul>
       </div>
+
+      <!-- Campos personalizados -->
+      {% if campos %}
+      <div class="tab-pane fade" id="tabCampos">
+        <form method="post" action="{% url 'leads:update_campos' lead.pk %}">
+          {% csrf_token %}
+          <div class="row g-3">
+            {% for campo in campos %}
+            <div class="col-12 col-md-6">
+              <label class="form-label small fw-semibold">
+                {{ campo.nombre }}
+                {% if campo.requerido %}<span class="text-danger">*</span>{% endif %}
+                <span class="text-muted fw-normal">({{ campo.get_tipo_display }})</span>
+              </label>
+              {% if campo.tipo == 'lista' %}
+              <select name="campo_{{ campo.slug }}" class="form-select form-select-sm">
+                <option value="">— Sin valor —</option>
+                {% for opcion in campo.opciones %}
+                <option value="{{ opcion }}" {% if lead.datos_extra and lead.datos_extra|dict_key:campo.slug == opcion %}selected{% endif %}>{{ opcion }}</option>
+                {% endfor %}
+              </select>
+              {% elif campo.tipo == 'booleano' %}
+              <div class="form-check mt-1">
+                <input type="checkbox" class="form-check-input" name="campo_{{ campo.slug }}" id="lc_{{ campo.slug }}"
+                  {% if lead.datos_extra and lead.datos_extra|dict_key:campo.slug %}checked{% endif %}>
+                <label class="form-check-label small" for="lc_{{ campo.slug }}">Sí</label>
+              </div>
+              {% elif campo.tipo == 'fecha' %}
+              <input type="date" name="campo_{{ campo.slug }}" class="form-control form-control-sm"
+                value="{{ lead.datos_extra|dict_key:campo.slug|default:'' }}">
+              {% elif campo.tipo == 'numero' %}
+              <input type="number" name="campo_{{ campo.slug }}" class="form-control form-control-sm"
+                value="{{ lead.datos_extra|dict_key:campo.slug|default:'' }}" step="any">
+              {% else %}
+              <input type="text" name="campo_{{ campo.slug }}" class="form-control form-control-sm"
+                value="{{ lead.datos_extra|dict_key:campo.slug|default:'' }}">
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+          <div class="mt-3">
+            <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check-lg"></i> Guardar campos</button>
+          </div>
+        </form>
+      </div>
+      {% endif %}
+
     </div>
   </div>
 </div>

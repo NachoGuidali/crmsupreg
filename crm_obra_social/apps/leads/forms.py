@@ -4,7 +4,7 @@ import io
 from django import forms
 from django.core.exceptions import ValidationError
 
-from .models import Lead, Plan
+from .models import Lead, Plan, CampoPersonalizado
 
 
 class LeadForm(forms.ModelForm):
@@ -88,3 +88,37 @@ LeadCSVImportForm = LeadImportForm
 class EstadoChangeForm(forms.Form):
     estado = forms.ChoiceField(choices=Lead.ESTADO_CHOICES, widget=forms.Select(attrs={'class': 'form-select'}))
     nota = forms.CharField(required=False, widget=forms.Textarea(attrs={'rows': 2, 'class': 'form-control', 'placeholder': 'Nota opcional sobre el cambio de estado'}))
+
+
+class CampoPersonalizadoForm(forms.ModelForm):
+    opciones_texto = forms.CharField(
+        required=False,
+        label='Opciones (una por línea)',
+        widget=forms.Textarea(attrs={'rows': 4, 'class': 'form-control', 'placeholder': 'Opción 1\nOpción 2\nOpción 3'}),
+        help_text='Solo para tipo "Lista de opciones".',
+    )
+
+    class Meta:
+        model = CampoPersonalizado
+        fields = ['nombre', 'tipo', 'alcance', 'requerido', 'orden', 'activo']
+        widgets = {
+            'nombre':   forms.TextInput(attrs={'class': 'form-control'}),
+            'tipo':     forms.Select(attrs={'class': 'form-select'}),
+            'alcance':  forms.Select(attrs={'class': 'form-select'}),
+            'requerido': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'orden':    forms.NumberInput(attrs={'class': 'form-control', 'min': 0}),
+            'activo':   forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk and self.instance.opciones:
+            self.fields['opciones_texto'].initial = '\n'.join(self.instance.opciones)
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        raw = self.cleaned_data.get('opciones_texto', '')
+        instance.opciones = [o.strip() for o in raw.splitlines() if o.strip()]
+        if commit:
+            instance.save()
+        return instance

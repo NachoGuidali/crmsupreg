@@ -12,9 +12,17 @@ urlpatterns = [
     path('<int:pk>/eliminar/', views.LeadDeleteView.as_view(), name='delete'),
     path('<int:pk>/estado/', views.LeadEstadoChangeView.as_view(), name='change_estado'),
     path('<int:pk>/mover/', views.LeadKanbanMoveView.as_view(), name='kanban_move'),
+    path('<int:pk>/campos/', views.LeadUpdateCamposView.as_view(), name='update_campos'),
+    path('<int:pk>/convertir/', views.LeadConvertirView.as_view(), name='convertir'),
     path('contactos/', views.ContactListView.as_view(), name='contact_list'),
     path('contactos/buscar/', views.ContactSearchAPIView.as_view(), name='contact_search'),
     path('importar/', views.LeadCSVImportView.as_view(), name='csv_import'),
     path('importar/template/', views.LeadImportTemplateView.as_view(), name='import_template'),
     path('exportar/', views.LeadCSVExportView.as_view(), name='csv_export'),
+    # Campos personalizados
+    path('campos/', views.CampoListView.as_view(), name='campos'),
+    path('campos/nuevo/', views.CampoCreateView.as_view(), name='campo_create'),
+    path('campos/<int:pk>/editar/', views.CampoUpdateView.as_view(), name='campo_update'),
+    path('campos/<int:pk>/eliminar/', views.CampoDeleteView.as_view(), name='campo_delete'),
+    path('campos/<int:pk>/toggle/', views.CampoToggleView.as_view(), name='campo_toggle'),
 ]

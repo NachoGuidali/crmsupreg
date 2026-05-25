@@ -8,6 +8,8 @@ services:
       POSTGRES_DB: crm_obra_social
       POSTGRES_USER: crm_user
       POSTGRES_PASSWORD: crm_password
+    ports:
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

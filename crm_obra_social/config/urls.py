@@ -17,6 +17,7 @@ urlpatterns = [
     path('reportes/', include('apps.reports.urls_reports', namespace='reports_detail')),
     path('automatizaciones/', include('apps.automations.urls', namespace='automations')),
     path('integraciones/', include('apps.integrations.urls', namespace='integrations')),
+    path('clientes/', include('apps.clientes.urls', namespace='clientes')),
     # Public REST API (no namespace conflict — api_urlpatterns has no app_name)
     path('api/v1/', include(api_urlpatterns)),
 ]
