@@ -1,7 +1,5 @@
 {% extends "base.html" %}
-{% load crm_tags %}
 {% block title %}Contactos{% endblock %}
-{% block nav_leads %}active{% endblock %}
 {% block nav_contacts %}active{% endblock %}
 
 {% block content %}
@@ -10,10 +8,10 @@
     <span class="text-muted fs-6 fw-normal ms-1">({{ total }})</span>
   </h4>
   <div class="d-flex gap-2 flex-wrap">
-    <a href="{% url 'leads:create' %}?from=contacts" class="btn btn-primary btn-sm"><i class="bi bi-person-plus"></i> Nuevo contacto</a>
+    <a href="{% url 'leads:create' %}?from=contacts" class="btn btn-primary btn-sm"><i class="bi bi-person-plus"></i> Nuevo lead</a>
+    <a href="{% url 'clientes:create' %}" class="btn btn-success btn-sm"><i class="bi bi-person-check"></i> Nuevo cliente</a>
     <a href="{% url 'leads:csv_import' %}" class="btn btn-outline-primary btn-sm"><i class="bi bi-cloud-upload"></i> Importar</a>
     <a href="{% url 'leads:csv_export' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-download"></i> Exportar CSV</a>
-    <a href="{% url 'campaigns:create' %}" class="btn btn-success btn-sm"><i class="bi bi-megaphone"></i> Nueva campaña</a>
   </div>
 </div>
 
@@ -32,16 +30,15 @@
       </select>
     </div>
     <div class="col-6 col-sm-3 col-md-2">
-      <select name="origen" class="form-select form-select-sm">
-        <option value="">Todos los orígenes</option>
-        {% for val, label in origen_choices %}
-        <option value="{{ val }}" {% if origen == val %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
+      <select name="tipo" class="form-select form-select-sm">
+        <option value="" {% if not tipo_filter %}selected{% endif %}>Leads y clientes</option>
+        <option value="lead" {% if tipo_filter == "lead" %}selected{% endif %}>Solo leads</option>
+        <option value="cliente" {% if tipo_filter == "cliente" %}selected{% endif %}>Solo clientes</option>
       </select>
     </div>
     <div class="col-auto">
       <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-search"></i></button>
-      {% if q or plan_id or origen %}
+      {% if q or plan_id or tipo_filter %}
       <a href="{% url 'leads:contact_list' %}" class="btn btn-sm btn-outline-secondary ms-1">Limpiar</a>
       {% endif %}
     </div>
@@ -59,10 +56,7 @@
             <th>Teléfono</th>
             <th>Email</th>
             <th>Plan</th>
-            <th>Estado</th>
-            {% for key in extra_keys %}
-            <th class="text-muted small">{{ key }}</th>
-            {% endfor %}
+            <th>Tipo / Estado</th>
             <th></th>
           </tr>
         </thead>
@@ -71,38 +65,52 @@
           <tr>
             <td>
               <div class="d-flex align-items-center gap-2">
-                <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center flex-shrink-0"
+                <div class="rounded-circle {% if c._tipo == 'cliente' %}bg-success{% else %}bg-primary{% endif %} text-white d-flex align-items-center justify-content-center flex-shrink-0"
                      style="width:34px;height:34px;font-size:.85rem;font-weight:600;">
                   {{ c.nombre_completo|slice:":1"|upper }}
                 </div>
                 <div>
+                  {% if c._tipo == 'cliente' %}
+                  <a href="{% url 'clientes:detail' c.pk %}" class="fw-semibold text-decoration-none text-dark">{{ c.nombre_completo }}</a>
+                  {% else %}
                   <a href="{% url 'leads:detail' c.pk %}" class="fw-semibold text-decoration-none text-dark">{{ c.nombre_completo }}</a>
+                  {% endif %}
                   {% if c.agente %}<div class="text-muted" style="font-size:.72rem;">{{ c.agente.get_full_name }}</div>{% endif %}
                 </div>
               </div>
             </td>
-            <td class="font-monospace small">{{ c.telefono }}</td>
+            <td class="font-monospace small">{{ c.telefono|default:"—" }}</td>
             <td class="small text-muted">{{ c.email|default:"—" }}</td>
-            <td class="small">{{ c.plan_interes|default:"—" }}</td>
-            <td><span class="badge bg-{{ c.get_estado_badge_class }}">{{ c.get_estado_display }}</span></td>
-            {% for key in extra_keys %}
-            <td class="small text-muted">{% if c.datos_extra %}{{ c.datos_extra|dict_key:key|default:"—" }}{% else %}—{% endif %}</td>
-            {% endfor %}
+            <td class="small">
+              {% if c._tipo == 'cliente' %}{{ c.plan|default:"—" }}{% else %}{{ c.plan_interes|default:"—" }}{% endif %}
+            </td>
+            <td>
+              {% if c._tipo == 'cliente' %}
+              <span class="badge bg-success">Cliente</span>
+              {% if c.numero_afiliado %}<span class="ms-1 text-muted small">{{ c.numero_afiliado }}</span>{% endif %}
+              {% else %}
+              <span class="badge bg-{{ c.get_estado_badge_class }}">{{ c.get_estado_display }}</span>
+              {% endif %}
+            </td>
             <td>
               <div class="d-flex gap-1">
+                {% if c._tipo == 'cliente' %}
+                <a href="{% url 'clientes:detail' c.pk %}" class="btn btn-sm btn-outline-secondary" title="Ver"><i class="bi bi-eye"></i></a>
+                {% else %}
                 <a href="{% url 'leads:detail' c.pk %}" class="btn btn-sm btn-outline-secondary" title="Ver"><i class="bi bi-eye"></i></a>
                 {% if c.conversacion_whatsapp %}
                 <a href="{% url 'whatsapp:conversacion' c.conversacion_whatsapp.pk %}" class="btn btn-sm btn-outline-success" title="WhatsApp"><i class="bi bi-whatsapp"></i></a>
+                {% endif %}
                 {% endif %}
               </div>
             </td>
           </tr>
           {% empty %}
           <tr>
-            <td colspan="{{ extra_keys|length|add:6 }}" class="text-center text-muted py-5">
+            <td colspan="6" class="text-center text-muted py-5">
               <i class="bi bi-person-x" style="font-size:2rem;"></i>
               <p class="mt-2">No se encontraron contactos{% if q %} para "{{ q }}"{% endif %}.</p>
-              <a href="{% url 'leads:csv_import' %}" class="btn btn-primary btn-sm">Importar contactos</a>
+              <a href="{% url 'leads:create' %}?from=contacts" class="btn btn-primary btn-sm">Agregar contacto</a>
             </td>
           </tr>
           {% endfor %}
@@ -117,11 +125,11 @@
 <nav class="mt-3">
   <ul class="pagination pagination-sm justify-content-center">
     {% if contactos.has_previous %}
-    <li class="page-item"><a class="page-link" href="?page={{ contactos.previous_page_number }}{% if q %}&q={{ q }}{% endif %}{% if plan_id %}&plan={{ plan_id }}{% endif %}{% if origen %}&origen={{ origen }}{% endif %}">«</a></li>
+    <li class="page-item"><a class="page-link" href="?page={{ contactos.previous_page_number }}{% if q %}&q={{ q }}{% endif %}{% if plan_id %}&plan={{ plan_id }}{% endif %}{% if tipo_filter %}&tipo={{ tipo_filter }}{% endif %}">«</a></li>
     {% endif %}
     <li class="page-item disabled"><span class="page-link">{{ contactos.number }}/{{ contactos.paginator.num_pages }}</span></li>
     {% if contactos.has_next %}
-    <li class="page-item"><a class="page-link" href="?page={{ contactos.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if plan_id %}&plan={{ plan_id }}{% endif %}{% if origen %}&origen={{ origen }}{% endif %}">»</a></li>
+    <li class="page-item"><a class="page-link" href="?page={{ contactos.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if plan_id %}&plan={{ plan_id }}{% endif %}{% if tipo_filter %}&tipo={{ tipo_filter }}{% endif %}">»</a></li>
     {% endif %}
   </ul>
 </nav>

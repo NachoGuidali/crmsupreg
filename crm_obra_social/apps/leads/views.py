@@ -14,6 +14,7 @@ from django.views import View
 from django.views.generic import CreateView, UpdateView, DetailView, DeleteView
 
 from apps.users.models import User
+from apps.clientes.models import Cliente
 from .forms import LeadForm, LeadFilterForm, LeadImportForm, EstadoChangeForm, CampoPersonalizadoForm
 from .models import Lead, HistorialEstado, Plan, CampoPersonalizado
 
@@ -485,49 +486,57 @@ class LeadKanbanMoveView(LoginRequiredMixin, LeadQuerysetMixin, View):
 
 
 class ContactListView(LoginRequiredMixin, View):
-    """Clean contact list view — all leads as a flat address-book style table."""
+    """Combined contact list: Leads + Clientes merged and sorted by name."""
     template_name = 'leads/contact_list.html'
 
     def get(self, request):
-        qs = Lead.objects.select_related('plan_interes', 'agente').order_by('nombre_completo')
-
-        # Search
         q = request.GET.get('q', '').strip()
+        plan_id = request.GET.get('plan')
+        tipo_filter = request.GET.get('tipo', '')
+
+        leads_qs = Lead.objects.select_related('plan_interes', 'agente')
+        clientes_qs = Cliente.objects.select_related('plan', 'agente')
+
         if q:
-            from django.db.models import Q
-            qs = qs.filter(
-                Q(nombre_completo__icontains=q) |
-                Q(telefono__icontains=q) |
-                Q(email__icontains=q)
+            leads_qs = leads_qs.filter(
+                Q(nombre_completo__icontains=q) | Q(telefono__icontains=q) | Q(email__icontains=q)
+            )
+            clientes_qs = clientes_qs.filter(
+                Q(nombre_completo__icontains=q) | Q(telefono__icontains=q) | Q(email__icontains=q)
             )
 
-        # Filters
-        plan_id = request.GET.get('plan')
         if plan_id:
-            qs = qs.filter(plan_interes_id=plan_id)
-        origen = request.GET.get('origen')
-        if origen:
-            qs = qs.filter(origen=origen)
+            leads_qs = leads_qs.filter(plan_interes_id=plan_id)
+            clientes_qs = clientes_qs.filter(plan_id=plan_id)
 
-        # Collect all datos_extra keys for column display
-        extra_keys_raw = set()
-        for lead in qs.values_list('datos_extra', flat=True):
-            if isinstance(lead, dict):
-                extra_keys_raw.update(lead.keys())
-        extra_keys = sorted(extra_keys_raw)[:6]  # show max 6 extra columns
+        # Tag each object so the template can distinguish them
+        leads_list = list(leads_qs)
+        for obj in leads_list:
+            obj._tipo = 'lead'
 
-        paginator = Paginator(qs, 30)
+        clientes_list = list(clientes_qs)
+        for obj in clientes_list:
+            obj._tipo = 'cliente'
+
+        if tipo_filter == 'lead':
+            combined = leads_list
+        elif tipo_filter == 'cliente':
+            combined = clientes_list
+        else:
+            combined = leads_list + clientes_list
+
+        combined.sort(key=lambda c: c.nombre_completo.lower())
+
+        paginator = Paginator(combined, 30)
         page = paginator.get_page(request.GET.get('page'))
 
         return render(request, self.template_name, {
             'contactos': page,
             'q': q,
             'plan_id': plan_id,
-            'origen': origen,
+            'tipo_filter': tipo_filter,
             'planes': Plan.objects.filter(activo=True),
-            'origen_choices': Lead.ORIGEN_CHOICES,
-            'extra_keys': extra_keys,
-            'total': qs.count(),
+            'total': len(combined),
         })
 
 
