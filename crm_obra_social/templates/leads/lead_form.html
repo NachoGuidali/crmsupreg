@@ -3,7 +3,6 @@
 {% block nav_leads %}active{% endblock %}
 
 {% block content %}
-{% with from_contacts=request.GET.from|default:request.POST.from %}
 <div class="mb-3">
   {% if from_contacts == "contacts" %}
   <a href="{% url 'leads:contact_list' %}" class="text-muted text-decoration-none small"><i class="bi bi-chevron-left"></i> Contactos</a>
@@ -35,5 +34,4 @@
     </form>
   </div>
 </div>
-{% endwith %}
 {% endblock %}

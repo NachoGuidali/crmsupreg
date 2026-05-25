@@ -250,6 +250,11 @@ class LeadCreateView(LoginRequiredMixin, CreateView):
         kwargs['user'] = self.request.user
         return kwargs
 
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['from_contacts'] = self.request.GET.get('from', '')
+        return ctx
+
     def form_valid(self, form):
         lead = form.save(commit=False)
         if not lead.agente and not self.request.user.can_see_all_leads:
@@ -301,6 +306,11 @@ class LeadUpdateView(LoginRequiredMixin, LeadQuerysetMixin, UpdateView):
         kwargs = super().get_form_kwargs()
         kwargs['user'] = self.request.user
         return kwargs
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['from_contacts'] = self.request.GET.get('from', '')
+        return ctx
 
     def form_valid(self, form):
         messages.success(self.request, 'Lead actualizado correctamente.')
