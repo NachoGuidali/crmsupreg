@@ -22,7 +22,7 @@ class BotCreateView(LoginRequiredMixin, View):
     template_name = 'chatbot/bot_form.html'
 
     def get(self, request):
-        return render(request, self.template_name, {'action': 'crear'})
+        return render(request, self.template_name, {'action': 'crear', 'nombre': '', 'descripcion': ''})
 
     def post(self, request):
         nombre = request.POST.get('nombre', '').strip()

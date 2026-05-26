@@ -25,13 +25,13 @@
           <div class="mb-3">
             <label class="form-label fw-semibold">Nombre <span class="text-danger">*</span></label>
             <input type="text" name="nombre" class="form-control"
-                   value="{{ bot.nombre|default:nombre|default:'' }}"
+                   value="{{ bot.nombre|default:nombre }}"
                    placeholder="Ej: Bot de bienvenida" required autofocus>
           </div>
           <div class="mb-3">
             <label class="form-label fw-semibold">Descripción</label>
             <textarea name="descripcion" class="form-control" rows="3"
-                      placeholder="Descripción del flujo (opcional)">{{ bot.descripcion|default:descripcion|default:'' }}</textarea>
+                      placeholder="Descripción del flujo (opcional)">{{ bot.descripcion|default:descripcion }}</textarea>
           </div>
           {% if action == 'editar' %}
           <div class="mb-4">
