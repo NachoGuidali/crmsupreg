@@ -27,4 +27,5 @@ urlpatterns = [
     path('campos/<int:pk>/editar/', views.CampoUpdateView.as_view(), name='campo_update'),
     path('campos/<int:pk>/eliminar/', views.CampoDeleteView.as_view(), name='campo_delete'),
     path('campos/<int:pk>/toggle/', views.CampoToggleView.as_view(), name='campo_toggle'),
+    path('asignar-masivo/', views.LeadBulkAssignView.as_view(), name='bulk_assign'),
 ]

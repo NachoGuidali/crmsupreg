@@ -33,6 +33,7 @@ _KNOWN_COLUMNS = {
     'plan', 'plan_interes',
     'origen', 'origin', 'source', 'fuente',
     'grupo_familiar', 'grupo',
+    'agente', 'agent', 'vendedor', 'asesor',
 }
 
 _ESTADO_MAP = {
@@ -118,8 +119,26 @@ def _get(row_lower: dict, *keys, default='') -> str:
     return default
 
 
-def _process_row(row: dict, plans_by_name: dict, actualizar: bool, default_agente) -> tuple:
+def _resolve_agente(nombre_agente: str, agentes_cache: dict) -> object:
+    """Look up an agent by full name or email, case-insensitive. Returns User or None."""
+    if not nombre_agente:
+        return None
+    key = nombre_agente.strip().lower()
+    if key in agentes_cache:
+        return agentes_cache[key]
+    # First call: populate cache from DB
+    if not agentes_cache:
+        for u in User.objects.filter(is_active=True):
+            agentes_cache[u.get_full_name().lower()] = u
+            agentes_cache[u.username.lower()] = u
+            agentes_cache[u.email.lower()] = u
+    return agentes_cache.get(key)
+
+
+def _process_row(row: dict, plans_by_name: dict, actualizar: bool, default_agente, agentes_cache: dict | None = None) -> tuple:
     """Returns ('created'|'updated'|'skipped'|'error', msg, datos_extra_keys)."""
+    if agentes_cache is None:
+        agentes_cache = {}
     row_lower = {k.lower().strip(): v for k, v in row.items()}
 
     nombre = _get(row_lower, 'nombre_completo', 'nombre', 'name', 'full_name', 'apellido')
@@ -156,6 +175,10 @@ def _process_row(row: dict, plans_by_name: dict, actualizar: bool, default_agent
 
     prioridad_raw = _get(row_lower, 'prioridad', 'priority').lower()
     prioridad = _PRIORIDAD_MAP.get(prioridad_raw, Lead.PRIORIDAD_MEDIA)
+
+    # Agente from column takes priority over default_agente
+    agente_raw = _get(row_lower, 'agente', 'agent', 'vendedor', 'asesor')
+    agente = _resolve_agente(agente_raw, agentes_cache) if agente_raw else default_agente
 
     # Everything not recognized → datos_extra
     datos_extra = {
@@ -208,7 +231,7 @@ def _process_row(row: dict, plans_by_name: dict, actualizar: bool, default_agent
         plan_interes=plan,
         estado=estado,
         prioridad=prioridad,
-        agente=default_agente,
+        agente=agente,
         datos_extra=datos_extra,
     )
     HistorialEstado.objects.create(lead=lead, estado_nuevo=lead.estado, nota='Importado.')
@@ -695,12 +718,19 @@ class LeadCSVImportView(LoginRequiredMixin, UserPassesTestMixin, View):
         plans_by_name = {p.nombre.lower(): p for p in Plan.objects.filter(activo=True)}
         plans_by_name.update({p.nombre: p for p in Plan.objects.filter(activo=True)})
 
+        # Pre-load all agents once for the whole import
+        agentes_cache = {}
+        for u in User.objects.filter(is_active=True):
+            agentes_cache[u.get_full_name().lower()] = u
+            agentes_cache[u.username.lower()] = u
+            agentes_cache[u.email.lower()] = u
+
         stats = {'created': 0, 'updated': 0, 'skipped': 0, 'error': 0}
         errors = []
         all_extra_keys = set()
 
         for i, row in enumerate(rows, start=2):
-            action, msg, extra_keys = _process_row(row, plans_by_name, actualizar, default_agente)
+            action, msg, extra_keys = _process_row(row, plans_by_name, actualizar, default_agente, agentes_cache)
             stats[action] += 1
             all_extra_keys.update(extra_keys)
             if action == 'error':
@@ -846,3 +876,26 @@ class LeadImportTemplateView(LoginRequiredMixin, View):
         response['Content-Disposition'] = 'attachment; filename="template_importar_contactos.xlsx"'
         wb.save(response)
         return response
+
+
+class LeadBulkAssignView(LoginRequiredMixin, UserPassesTestMixin, View):
+    def test_func(self):
+        return self.request.user.can_see_all_leads
+
+    def post(self, request):
+        lead_ids = request.POST.getlist('lead_ids')
+        agente_id = request.POST.get('agente_id', '').strip()
+
+        if not lead_ids:
+            messages.warning(request, 'No seleccionaste ningún lead.')
+            return redirect(request.POST.get('next', 'leads:list'))
+
+        try:
+            agente = User.objects.get(pk=agente_id, is_active=True)
+        except (User.DoesNotExist, ValueError):
+            messages.error(request, 'Agente inválido.')
+            return redirect(request.POST.get('next', 'leads:list'))
+
+        updated = Lead.objects.filter(pk__in=lead_ids).update(agente=agente)
+        messages.success(request, f'{updated} lead{"s" if updated != 1 else ""} asignado{"s" if updated != 1 else ""} a {agente.get_full_name()}.')
+        return redirect(request.POST.get('next', 'leads:list'))

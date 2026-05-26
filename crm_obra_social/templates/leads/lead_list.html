@@ -16,7 +16,7 @@
 </div>
 
 <!-- Filters -->
-<form method="get" class="card border-0 shadow-sm mb-3 p-3">
+<form method="get" class="card border-0 shadow-sm mb-3 p-3" id="filter-form">
   <div class="row g-2">
     <div class="col-12 col-md-4">{{ filter_form.q }}</div>
     <div class="col-6 col-md-2">{{ filter_form.estado }}</div>
@@ -42,13 +42,50 @@
   </div>
 </form>
 
+<!-- Bulk action bar (supervisor only) -->
+{% if request.user.can_see_all_leads %}
+<div id="bulk-bar" class="d-none mb-2">
+  <form method="post" action="{% url 'leads:bulk_assign' %}" id="bulk-form">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <div class="card border-primary border-0 shadow-sm">
+      <div class="card-body py-2 px-3 d-flex align-items-center gap-3 flex-wrap">
+        <span class="fw-semibold text-primary small">
+          <i class="bi bi-check2-square"></i> <span id="bulk-count">0</span> seleccionado(s)
+        </span>
+        <div class="d-flex align-items-center gap-2 ms-auto">
+          <select name="agente_id" class="form-select form-select-sm" style="min-width:180px;" required>
+            <option value="">Asignar a agente…</option>
+            {% for a in agents %}
+            <option value="{{ a.pk }}">{{ a.get_full_name }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-primary btn-sm">
+            <i class="bi bi-person-check"></i> Asignar
+          </button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-deselect">
+            <i class="bi bi-x"></i> Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  </form>
+</div>
+{% endif %}
+
 <!-- Table -->
+<form id="bulk-form-wrap">
 <div class="card border-0 shadow-sm">
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-hover align-middle mb-0">
         <thead class="table-light">
           <tr>
+            {% if request.user.can_see_all_leads %}
+            <th style="width:36px;">
+              <input type="checkbox" class="form-check-input" id="chk-all" title="Seleccionar todos">
+            </th>
+            {% endif %}
             <th>Nombre</th><th>DNI</th><th>Teléfono</th><th>Plan</th>
             <th>Estado</th><th>Prioridad</th><th>Agente</th><th>Creado</th><th></th>
           </tr>
@@ -56,6 +93,11 @@
         <tbody>
           {% for lead in leads %}
           <tr>
+            {% if request.user.can_see_all_leads %}
+            <td>
+              <input type="checkbox" class="form-check-input lead-chk" value="{{ lead.pk }}" name="lead_ids">
+            </td>
+            {% endif %}
             <td><a href="{% url 'leads:detail' lead.pk %}" class="fw-semibold text-decoration-none">{{ lead.nombre_completo }}</a></td>
             <td class="text-muted">{{ lead.dni }}</td>
             <td><a href="tel:{{ lead.telefono }}" class="text-muted text-decoration-none">{{ lead.telefono }}</a></td>
@@ -81,13 +123,14 @@
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="9" class="text-center text-muted py-4">No se encontraron leads.</td></tr>
+          <tr><td colspan="{% if request.user.can_see_all_leads %}10{% else %}9{% endif %}" class="text-center text-muted py-4">No se encontraron leads.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
   </div>
 </div>
+</form>
 
 <!-- Pagination -->
 {% if leads.has_other_pages %}
@@ -102,5 +145,59 @@
     {% endif %}
   </ul>
 </nav>
+{% endif %}
+
+{% if request.user.can_see_all_leads %}
+<script>
+const chkAll = document.getElementById('chk-all');
+const bulkBar = document.getElementById('bulk-bar');
+const bulkCount = document.getElementById('bulk-count');
+const bulkForm = document.getElementById('bulk-form');
+
+function getChecked() {
+  return [...document.querySelectorAll('.lead-chk:checked')];
+}
+
+function syncBar() {
+  const checked = getChecked();
+  bulkCount.textContent = checked.length;
+  bulkBar.classList.toggle('d-none', checked.length === 0);
+}
+
+chkAll.addEventListener('change', () => {
+  document.querySelectorAll('.lead-chk').forEach(c => c.checked = chkAll.checked);
+  syncBar();
+});
+
+document.querySelectorAll('.lead-chk').forEach(c => {
+  c.addEventListener('change', () => {
+    chkAll.checked = getChecked().length === document.querySelectorAll('.lead-chk').length;
+    syncBar();
+  });
+});
+
+document.getElementById('btn-deselect').addEventListener('click', () => {
+  document.querySelectorAll('.lead-chk, #chk-all').forEach(c => c.checked = false);
+  syncBar();
+});
+
+bulkForm.addEventListener('submit', function(e) {
+  const checked = getChecked();
+  if (!checked.length) { e.preventDefault(); return; }
+  if (!this.querySelector('[name=agente_id]').value) {
+    e.preventDefault();
+    this.querySelector('[name=agente_id]').focus();
+    return;
+  }
+  // Inject selected IDs into the form
+  checked.forEach(c => {
+    const inp = document.createElement('input');
+    inp.type = 'hidden';
+    inp.name = 'lead_ids';
+    inp.value = c.value;
+    this.appendChild(inp);
+  });
+});
+</script>
 {% endif %}
 {% endblock %}
