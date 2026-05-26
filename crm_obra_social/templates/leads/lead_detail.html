@@ -85,6 +85,7 @@
       <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabTareas">Tareas ({{ tareas|length }})</button></li>
       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabCotizaciones">Cotizaciones ({{ cotizaciones|length }})</button></li>
       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabMensajes">Mensajes ({{ mensajes|length }})</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabDocumentos">Documentos ({{ documentos|length }})</button></li>
       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabHistorial">Historial</button></li>
       {% if campos %}<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabCampos">Campos ({{ campos|length }})</button></li>{% endif %}
     </ul>
@@ -148,6 +149,56 @@
         {% empty %}
         <p class="text-muted small">Sin mensajes de WhatsApp.</p>
         {% endfor %}
+      </div>
+
+      <!-- Documentos -->
+      <div class="tab-pane fade" id="tabDocumentos">
+        <!-- Upload form -->
+        <form method="post" action="{% url 'leads:documento_upload' lead.pk %}" enctype="multipart/form-data" class="mb-3 border rounded p-3 bg-light">
+          {% csrf_token %}
+          <div class="row g-2 align-items-end">
+            <div class="col-12 col-md-4">
+              <label class="form-label small fw-semibold mb-1">Archivo</label>
+              <input type="file" name="archivo" class="form-control form-control-sm" required accept=".pdf,.jpg,.jpeg,.png,.docx,.doc,.xlsx,.xls">
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-label small fw-semibold mb-1">Tipo</label>
+              <select name="tipo" class="form-select form-select-sm">
+                {% for val, label in documento_tipos %}
+                <option value="{{ val }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-label small fw-semibold mb-1">Descripción (opcional)</label>
+              <input type="text" name="nombre" class="form-control form-control-sm" placeholder="Ej: Recibo feb 2025">
+            </div>
+            <div class="col-auto">
+              <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-upload"></i> Subir</button>
+            </div>
+          </div>
+        </form>
+        <!-- Document list -->
+        {% if documentos %}
+        <ul class="list-group list-group-flush">
+          {% for doc in documentos %}
+          <li class="list-group-item px-0 d-flex align-items-center gap-2">
+            <i class="bi bi-{{ doc.icono }} fs-5"></i>
+            <div class="flex-grow-1">
+              <a href="{{ doc.archivo.url }}" target="_blank" class="fw-semibold text-decoration-none small">{{ doc.nombre }}</a>
+              <div class="text-muted" style="font-size:.72rem;">{{ doc.get_tipo_display }} · {{ doc.created_at|date:"d/m/Y" }} · {{ doc.subido_por.get_full_name|default:"Sistema" }}</div>
+            </div>
+            <form method="post" action="{% url 'leads:documento_delete' doc.pk %}" class="d-inline"
+                  onsubmit="return confirm('¿Eliminar este documento?')">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-outline-danger btn-sm py-0"><i class="bi bi-trash"></i></button>
+            </form>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted small">Sin documentos subidos todavía.</p>
+        {% endif %}
       </div>
 
       <!-- Historial -->

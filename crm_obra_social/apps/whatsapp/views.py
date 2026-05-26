@@ -22,6 +22,20 @@ from .webhook import parse_incoming_webhook, verify_signature
 logger = logging.getLogger('apps.whatsapp')
 
 
+def _auto_contactado(conv):
+    """Change lead status from NUEVO → CONTACTADO when a message is sent/received."""
+    from apps.leads.models import Lead, HistorialEstado
+    lead = conv.lead
+    if lead and lead.estado == Lead.ESTADO_NUEVO:
+        Lead.objects.filter(pk=lead.pk).update(estado=Lead.ESTADO_CONTACTADO)
+        HistorialEstado.objects.create(
+            lead=lead,
+            estado_anterior=Lead.ESTADO_NUEVO,
+            estado_nuevo=Lead.ESTADO_CONTACTADO,
+            nota='Cambio automático al iniciar conversación WhatsApp.',
+        )
+
+
 @method_decorator(csrf_exempt, name='dispatch')
 class WebhookView(View):
     def get(self, request):
@@ -57,20 +71,21 @@ class InboxView(LoginRequiredMixin, View):
     template_name = 'whatsapp/inbox.html'
 
     def get(self, request):
+        from django.db.models import Q
         qs = Conversacion.objects.select_related('lead', 'agente')
         if not request.user.can_see_all_leads:
-            qs = qs.filter(agente=request.user)
-        # Filter by search query
+            qs = qs.filter(Q(agente=request.user) | Q(lead__agente=request.user))
         q = request.GET.get('q', '').strip()
         if q:
-            qs = qs.filter(nombre_contacto__icontains=q) | qs.filter(telefono__icontains=q)
-        paginator = Paginator(qs, 30)
+            qs = qs.filter(Q(nombre_contacto__icontains=q) | Q(telefono__icontains=q))
+        paginator = Paginator(qs.distinct(), 30)
         page = paginator.get_page(request.GET.get('page'))
         unread_total = Conversacion.objects.filter(mensajes_no_leidos__gt=0).count()
         if not request.user.can_see_all_leads:
             unread_total = Conversacion.objects.filter(
-                mensajes_no_leidos__gt=0, agente=request.user
-            ).count()
+                Q(mensajes_no_leidos__gt=0),
+                Q(agente=request.user) | Q(lead__agente=request.user),
+            ).distinct().count()
         return render(request, self.template_name, {
             'conversaciones': page,
             'unread_total': unread_total,
@@ -82,10 +97,11 @@ class ConversacionDetailView(LoginRequiredMixin, View):
     template_name = 'whatsapp/conversacion.html'
 
     def _get_conv(self, request, pk):
+        from django.db.models import Q
         qs = Conversacion.objects.select_related('lead', 'agente')
         if not request.user.can_see_all_leads:
-            qs = qs.filter(agente=request.user)
-        return get_object_or_404(qs, pk=pk)
+            qs = qs.filter(Q(agente=request.user) | Q(lead__agente=request.user))
+        return get_object_or_404(qs.distinct(), pk=pk)
 
     def get(self, request, pk):
         conv = self._get_conv(request, pk)
@@ -128,6 +144,7 @@ class ConversacionDetailView(LoginRequiredMixin, View):
             )
             send_whatsapp_message_task.delay(msg.pk)
             Conversacion.objects.filter(pk=pk).update(ultimo_mensaje_at=timezone.now())
+            _auto_contactado(conv)
 
         elif action == 'send_template':
             from .sender import send_template_message
@@ -161,6 +178,7 @@ class ConversacionDetailView(LoginRequiredMixin, View):
                     timestamp=timezone.now(),
                 )
                 Conversacion.objects.filter(pk=pk).update(ultimo_mensaje_at=timezone.now())
+                _auto_contactado(conv)
                 messages.success(request, 'Plantilla enviada.')
             except Exception as e:
                 messages.error(request, f'Error al enviar la plantilla: {e}')
@@ -500,12 +518,18 @@ class IniciarConversacionView(LoginRequiredMixin, View):
             defaults={
                 'lead': lead,
                 'nombre_contacto': lead.nombre_completo,
+                'agente': lead.agente,
             }
         )
-        if not created and conv.lead_id is None:
-            conv.lead = lead
+        if not created:
+            update_fields = []
+            if conv.lead_id is None:
+                conv.lead = lead; update_fields.append('lead')
             conv.nombre_contacto = conv.nombre_contacto or lead.nombre_completo
-            conv.save(update_fields=['lead', 'nombre_contacto'])
+            update_fields.append('nombre_contacto')
+            if not conv.agente_id and lead.agente_id:
+                conv.agente_id = lead.agente_id; update_fields.append('agente')
+            conv.save(update_fields=update_fields)
 
         if created:
             messages.success(

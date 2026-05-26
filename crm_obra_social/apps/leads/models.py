@@ -190,6 +190,55 @@ class Lead(models.Model):
         return {'alta': 'danger', 'media': 'warning', 'baja': 'success'}.get(self.prioridad, 'secondary')
 
 
+class Documento(models.Model):
+    TIPO_RECIBO = 'recibo_sueldo'
+    TIPO_DNI = 'dni'
+    TIPO_CONTRATO = 'contrato'
+    TIPO_OTRO = 'otro'
+    TIPO_CHOICES = [
+        (TIPO_RECIBO, 'Recibo de sueldo'),
+        (TIPO_DNI, 'DNI'),
+        (TIPO_CONTRATO, 'Contrato / formulario'),
+        (TIPO_OTRO, 'Otro'),
+    ]
+
+    lead = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name='documentos')
+    nombre = models.CharField(max_length=200, verbose_name='Descripción')
+    tipo = models.CharField(max_length=30, choices=TIPO_CHOICES, default=TIPO_OTRO, verbose_name='Tipo')
+    archivo = models.FileField(upload_to='documentos/%Y/%m/', verbose_name='Archivo')
+    subido_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='documentos_subidos',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Documento'
+        verbose_name_plural = 'Documentos'
+
+    def __str__(self):
+        return f'{self.nombre} ({self.get_tipo_display()})'
+
+    @property
+    def extension(self):
+        name = self.archivo.name or ''
+        return name.rsplit('.', 1)[-1].lower() if '.' in name else ''
+
+    @property
+    def icono(self):
+        ext = self.extension
+        if ext == 'pdf':
+            return 'file-earmark-pdf text-danger'
+        if ext in ('jpg', 'jpeg', 'png', 'gif', 'webp'):
+            return 'file-earmark-image text-primary'
+        if ext in ('xlsx', 'xls', 'csv'):
+            return 'file-earmark-spreadsheet text-success'
+        if ext in ('docx', 'doc'):
+            return 'file-earmark-word text-info'
+        return 'file-earmark text-secondary'
+
+
 class HistorialEstado(models.Model):
     lead = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name='historial_estados')
     estado_anterior = models.CharField(max_length=20, choices=Lead.ESTADO_CHOICES, blank=True)

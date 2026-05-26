@@ -47,11 +47,25 @@ def process_incoming_message(self, message_data: dict):
                 )
             conv.lead = lead
 
+        # Sync conversation agente from lead agente
+        if conv.lead and conv.lead.agente_id and not conv.agente_id:
+            conv.agente_id = conv.lead.agente_id
+
         conv.ultimo_mensaje_at = message_data['timestamp']
         conv.mensajes_no_leidos += 1
         conv.ventana_activa = True
         conv.ventana_expira_at = message_data['timestamp'] + timedelta(hours=24)
         conv.save()
+
+        # Auto-change lead status NUEVO → CONTACTADO on first incoming message
+        if conv.lead and conv.lead.estado == Lead.ESTADO_NUEVO:
+            Lead.objects.filter(pk=conv.lead.pk).update(estado=Lead.ESTADO_CONTACTADO)
+            HistorialEstado.objects.create(
+                lead=conv.lead,
+                estado_anterior=Lead.ESTADO_NUEVO,
+                estado_nuevo=Lead.ESTADO_CONTACTADO,
+                nota='Cambio automático al recibir mensaje WhatsApp.',
+            )
 
         msg_type = message_data.get('type', Mensaje.TIPO_TEXTO)
         media_id = message_data.get('media_id', '')

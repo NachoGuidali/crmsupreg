@@ -16,7 +16,7 @@ from django.views.generic import CreateView, UpdateView, DetailView, DeleteView
 from apps.users.models import User
 from apps.clientes.models import Cliente
 from .forms import LeadForm, LeadFilterForm, LeadImportForm, EstadoChangeForm, CampoPersonalizadoForm
-from .models import Lead, HistorialEstado, Plan, CampoPersonalizado
+from .models import Lead, HistorialEstado, Plan, CampoPersonalizado, Documento
 
 # Columns that are recognized as standard Lead fields (case-insensitive)
 _KNOWN_COLUMNS = {
@@ -337,6 +337,8 @@ class LeadDetailView(LoginRequiredMixin, LeadQuerysetMixin, DetailView):
             activo=True,
             alcance__in=[CampoPersonalizado.ALCANCE_LEADS, CampoPersonalizado.ALCANCE_AMBOS]
         )
+        ctx['documentos'] = lead.documentos.select_related('subido_por').all()
+        ctx['documento_tipos'] = Documento.TIPO_CHOICES
         return ctx
 
 
@@ -427,6 +429,47 @@ class LeadConvertirView(LoginRequiredMixin, UserPassesTestMixin, View):
         lead.delete()
         messages.success(request, f'{cliente.nombre_completo} convertido a Cliente correctamente.')
         return redirect('clientes:detail', pk=cliente.pk)
+
+
+# ── Documentos ──────────────────────────────────────────
+
+class DocumentoUploadView(LoginRequiredMixin, View):
+    def post(self, request, lead_pk):
+        lead = get_object_or_404(Lead, pk=lead_pk)
+        if not request.user.can_see_all_leads and lead.agente != request.user:
+            from django.http import HttpResponseForbidden
+            return HttpResponseForbidden()
+        archivo = request.FILES.get('archivo')
+        nombre = request.POST.get('nombre', '').strip()
+        tipo = request.POST.get('tipo', Documento.TIPO_OTRO)
+        if not archivo:
+            messages.error(request, 'Seleccioná un archivo.')
+            return redirect('leads:detail', pk=lead_pk)
+        if archivo.size > 20 * 1024 * 1024:
+            messages.error(request, 'El archivo no puede superar 20 MB.')
+            return redirect('leads:detail', pk=lead_pk)
+        Documento.objects.create(
+            lead=lead,
+            nombre=nombre or archivo.name,
+            tipo=tipo,
+            archivo=archivo,
+            subido_por=request.user,
+        )
+        messages.success(request, 'Documento subido correctamente.')
+        return redirect('leads:detail', pk=lead_pk)
+
+
+class DocumentoDeleteView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        doc = get_object_or_404(Documento, pk=pk)
+        lead_pk = doc.lead_id
+        if not request.user.can_see_all_leads and doc.lead.agente != request.user:
+            from django.http import HttpResponseForbidden
+            return HttpResponseForbidden()
+        doc.archivo.delete(save=False)
+        doc.delete()
+        messages.success(request, 'Documento eliminado.')
+        return redirect('leads:detail', pk=lead_pk)
 
 
 # ── Campos personalizados CRUD ────────────────────────────
