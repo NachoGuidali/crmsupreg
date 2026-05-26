@@ -7,27 +7,27 @@ logger = logging.getLogger('apps.campaigns')
 
 RATE_LIMIT_PER_MINUTE = 800  # Safely under Meta's 1000/min limit
 
-LEAD_FIELD_MAP = {
-    'nombre_completo': lambda l: l.nombre_completo or '',
-    'email': lambda l: l.email or '',
-    'plan': lambda l: str(l.plan_interes) if l.plan_interes else '',
-    'localidad': lambda l: l.localidad or '',
-    'provincia': lambda l: l.provincia or '',
-    'telefono': lambda l: l.telefono or '',
+# Works for both Lead (plan_interes) and Cliente (plan)
+CONTACT_FIELD_MAP = {
+    'nombre_completo': lambda obj: getattr(obj, 'nombre_completo', '') or '',
+    'email':           lambda obj: getattr(obj, 'email', '') or '',
+    'plan':            lambda obj: str(getattr(obj, 'plan_interes', None) or getattr(obj, 'plan', None) or ''),
+    'localidad':       lambda obj: getattr(obj, 'localidad', '') or '',
+    'provincia':       lambda obj: getattr(obj, 'provincia', '') or '',
+    'telefono':        lambda obj: getattr(obj, 'telefono', '') or '',
 }
 
 
-def _build_variables_for_lead(lead, variables_mapping: list) -> list:
-    """Resolve template variable values for a specific lead."""
+def _build_variables_for_contact(contact, variables_mapping: list) -> list:
+    """Resolve template variable values for a Lead or Cliente."""
     vals = []
     for mapping in variables_mapping:
         tipo = mapping.get('tipo', 'fijo')
         valor = mapping.get('valor', '')
         if tipo == 'campo':
-            vals.append(str(LEAD_FIELD_MAP[valor](lead)) if valor in LEAD_FIELD_MAP else '')
+            vals.append(CONTACT_FIELD_MAP[valor](contact) if valor in CONTACT_FIELD_MAP else '')
         elif tipo == 'extra':
-            # datos_extra column from CSV/Excel import
-            vals.append(str((lead.datos_extra or {}).get(valor, '')))
+            vals.append(str((getattr(contact, 'datos_extra', {}) or {}).get(valor, '')))
         else:
             vals.append(valor)
     return vals
@@ -36,6 +36,8 @@ def _build_variables_for_lead(lead, variables_mapping: list) -> list:
 @shared_task(bind=True)
 def ejecutar_campana(self, campana_id: int):
     """Send bulk template messages for a campaign, respecting Meta rate limits."""
+    from apps.leads.models import Lead
+    from apps.clientes.models import Cliente
     from .models import Campana, CampanaLog
     from apps.whatsapp.sender import send_template_message
 
@@ -43,8 +45,8 @@ def ejecutar_campana(self, campana_id: int):
     campana.status = Campana.STATUS_EN_EJECUCION
     campana.save(update_fields=['status'])
 
-    leads = list(campana.get_segment_queryset().select_related('plan_interes'))
-    campana.total_destinatarios = len(leads)
+    recipients = campana.get_recipients()
+    campana.total_destinatarios = len(recipients)
     campana.save(update_fields=['total_destinatarios'])
 
     plantilla = campana.plantilla
@@ -53,12 +55,13 @@ def ejecutar_campana(self, campana_id: int):
     errores = 0
     interval = 60.0 / RATE_LIMIT_PER_MINUTE
 
-    for lead in leads:
+    for contact in recipients:
+        is_cliente = isinstance(contact, Cliente)
         try:
-            variables_vals = _build_variables_for_lead(lead, variables_mapping)
+            variables_vals = _build_variables_for_contact(contact, variables_mapping)
             components = plantilla.build_send_components(variables_vals if variables_vals else None)
             result = send_template_message(
-                to=lead.telefono,
+                to=contact.telefono,
                 template_name=plantilla.nombre_meta or plantilla.nombre,
                 language=plantilla.idioma,
                 components=components,
@@ -66,23 +69,27 @@ def ejecutar_campana(self, campana_id: int):
             wam_id = result.get('messages', [{}])[0].get('id', '')
             CampanaLog.objects.create(
                 campana=campana,
-                lead=lead,
-                telefono=lead.telefono,
+                lead=None if is_cliente else contact,
+                cliente=contact if is_cliente else None,
+                telefono=contact.telefono,
+                nombre_contacto=contact.nombre_completo,
                 status=CampanaLog.STATUS_ENVIADO,
                 whatsapp_message_id=wam_id,
             )
             enviados += 1
-            logger.info('Campaign %d: sent to %s', campana_id, lead.telefono)
+            logger.info('Campaign %d: sent to %s', campana_id, contact.telefono)
         except Exception as e:
             CampanaLog.objects.create(
                 campana=campana,
-                lead=lead,
-                telefono=lead.telefono,
+                lead=None if is_cliente else contact,
+                cliente=contact if is_cliente else None,
+                telefono=contact.telefono,
+                nombre_contacto=contact.nombre_completo,
                 status=CampanaLog.STATUS_ERROR,
                 error_detalle=str(e),
             )
             errores += 1
-            logger.error('Campaign %d: error sending to %s: %s', campana_id, lead.telefono, e)
+            logger.error('Campaign %d: error sending to %s: %s', campana_id, contact.telefono, e)
         time.sleep(interval)
 
     campana.enviados = enviados

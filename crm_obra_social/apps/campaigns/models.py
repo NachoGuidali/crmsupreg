@@ -21,26 +21,30 @@ class Campana(models.Model):
         (MODO_MANUAL, 'Selección manual de contactos'),
     ]
 
+    TIPO_LEADS = 'leads'
+    TIPO_CLIENTES = 'clientes'
+    TIPO_TODOS = 'todos'
+    TIPO_CHOICES = [
+        (TIPO_LEADS, 'Solo Leads'),
+        (TIPO_CLIENTES, 'Solo Clientes'),
+        (TIPO_TODOS, 'Leads y Clientes'),
+    ]
+
     nombre = models.CharField(max_length=200)
     plantilla = models.ForeignKey('whatsapp.PlantillaHSM', on_delete=models.PROTECT)
     modo_seleccion = models.CharField(max_length=10, choices=MODO_CHOICES, default=MODO_SEGMENTO)
-    # Segment filters stored as JSON for flexibility
-    filtros_segmento = models.JSONField(default=dict, blank=True, help_text='Filtros de segmento: estado, plan_id, provincia, dias_sin_contacto')
-    # Manual contact selection: list of lead PKs
-    contactos_ids = models.JSONField(
-        default=list, blank=True,
-        verbose_name='Contactos seleccionados',
-        help_text='Lista de IDs de leads seleccionados manualmente.',
+    tipo_destinatario = models.CharField(
+        max_length=10, choices=TIPO_CHOICES, default=TIPO_LEADS,
+        verbose_name='Tipo de destinatarios',
     )
+    filtros_segmento = models.JSONField(default=dict, blank=True)
+    # Manual selection
+    contactos_ids = models.JSONField(default=list, blank=True, verbose_name='Leads seleccionados')
+    contactos_clientes_ids = models.JSONField(default=list, blank=True, verbose_name='Clientes seleccionados')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_BORRADOR)
     fecha_programada = models.DateTimeField(null=True, blank=True)
     creado_por = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
-    # Variable mapping: [{"tipo": "campo|fijo", "valor": "nombre_completo|..."}]
-    variables_mapping = models.JSONField(
-        default=list, blank=True,
-        verbose_name='Mapeo de variables',
-        help_text='Define cómo se rellenan {{1}}, {{2}}... de la plantilla para cada lead.',
-    )
+    variables_mapping = models.JSONField(default=list, blank=True)
     # Stats
     total_destinatarios = models.PositiveIntegerField(default=0)
     enviados = models.PositiveIntegerField(default=0)
@@ -58,16 +62,101 @@ class Campana(models.Model):
     def __str__(self):
         return self.nombre
 
-    def get_segment_queryset(self):
+    def get_recipients(self):
+        """Returns list of Lead + Cliente objects for this campaign."""
         from datetime import timedelta
         from apps.leads.models import Lead
+        from apps.clientes.models import Cliente
         from django.utils import timezone
 
-        # Manual selection: use exact list of IDs
+        if self.modo_seleccion == self.MODO_MANUAL:
+            result = []
+            if self.contactos_ids:
+                result += list(Lead.objects.filter(
+                    pk__in=self.contactos_ids, telefono__startswith='+'
+                ).select_related('plan_interes'))
+            if self.contactos_clientes_ids:
+                result += list(Cliente.objects.filter(
+                    pk__in=self.contactos_clientes_ids, telefono__startswith='+'
+                ).select_related('plan'))
+            return result
+
+        f = self.filtros_segmento
+        leads_list = []
+        clientes_list = []
+
+        def _apply_common_filters(qs, is_lead):
+            if f.get('plan_id'):
+                qs = qs.filter(plan_interes_id=f['plan_id']) if is_lead else qs.filter(plan_id=f['plan_id'])
+            if f.get('provincia'):
+                qs = qs.filter(provincia__icontains=f['provincia'])
+            if f.get('dias_sin_contacto'):
+                try:
+                    cutoff = timezone.now() - timedelta(days=int(f['dias_sin_contacto']))
+                    qs = qs.filter(updated_at__lt=cutoff)
+                except (ValueError, TypeError):
+                    pass
+            return qs
+
+        if self.tipo_destinatario in (self.TIPO_LEADS, self.TIPO_TODOS):
+            qs = Lead.objects.filter(telefono__startswith='+').select_related('plan_interes')
+            if f.get('estado'):
+                qs = qs.filter(estado=f['estado'])
+            qs = _apply_common_filters(qs, is_lead=True)
+            leads_list = list(qs)
+
+        if self.tipo_destinatario in (self.TIPO_CLIENTES, self.TIPO_TODOS):
+            qs = Cliente.objects.filter(telefono__startswith='+').select_related('plan')
+            qs = _apply_common_filters(qs, is_lead=False)
+            clientes_list = list(qs)
+
+        return leads_list + clientes_list
+
+    def get_recipients_count(self):
+        """Returns {'leads': N, 'clientes': M, 'total': N+M} using COUNT queries."""
+        from datetime import timedelta
+        from apps.leads.models import Lead
+        from apps.clientes.models import Cliente
+        from django.utils import timezone
+
+        if self.modo_seleccion == self.MODO_MANUAL:
+            lc = Lead.objects.filter(pk__in=self.contactos_ids or [], telefono__startswith='+').count()
+            cc = Cliente.objects.filter(pk__in=self.contactos_clientes_ids or [], telefono__startswith='+').count()
+            return {'leads': lc, 'clientes': cc, 'total': lc + cc}
+
+        f = self.filtros_segmento
+        lc = cc = 0
+
+        def _apply_common_filters(qs, is_lead):
+            if f.get('plan_id'):
+                qs = qs.filter(plan_interes_id=f['plan_id']) if is_lead else qs.filter(plan_id=f['plan_id'])
+            if f.get('provincia'):
+                qs = qs.filter(provincia__icontains=f['provincia'])
+            if f.get('dias_sin_contacto'):
+                try:
+                    cutoff = timezone.now() - timedelta(days=int(f['dias_sin_contacto']))
+                    qs = qs.filter(updated_at__lt=cutoff)
+                except (ValueError, TypeError):
+                    pass
+            return qs
+
+        if self.tipo_destinatario in (self.TIPO_LEADS, self.TIPO_TODOS):
+            qs = Lead.objects.filter(telefono__startswith='+')
+            if f.get('estado'):
+                qs = qs.filter(estado=f['estado'])
+            lc = _apply_common_filters(qs, True).count()
+
+        if self.tipo_destinatario in (self.TIPO_CLIENTES, self.TIPO_TODOS):
+            qs = Cliente.objects.filter(telefono__startswith='+')
+            cc = _apply_common_filters(qs, False).count()
+
+        return {'leads': lc, 'clientes': cc, 'total': lc + cc}
+
+    # Keep backward compat for old code paths
+    def get_segment_queryset(self):
+        from apps.leads.models import Lead
         if self.modo_seleccion == self.MODO_MANUAL and self.contactos_ids:
             return Lead.objects.filter(pk__in=self.contactos_ids, telefono__startswith='+')
-
-        # Segment-based filtering
         qs = Lead.objects.filter(telefono__startswith='+')
         f = self.filtros_segmento
         if f.get('estado'):
@@ -76,9 +165,6 @@ class Campana(models.Model):
             qs = qs.filter(plan_interes_id=f['plan_id'])
         if f.get('provincia'):
             qs = qs.filter(provincia__icontains=f['provincia'])
-        if f.get('dias_sin_contacto'):
-            cutoff = timezone.now() - timedelta(days=int(f['dias_sin_contacto']))
-            qs = qs.filter(updated_at__lt=cutoff)
         return qs
 
 
@@ -91,8 +177,10 @@ class CampanaLog(models.Model):
     ]
 
     campana = models.ForeignKey(Campana, on_delete=models.CASCADE, related_name='logs')
-    lead = models.ForeignKey('leads.Lead', on_delete=models.SET_NULL, null=True)
+    lead = models.ForeignKey('leads.Lead', on_delete=models.SET_NULL, null=True, blank=True)
+    cliente = models.ForeignKey('clientes.Cliente', on_delete=models.SET_NULL, null=True, blank=True)
     telefono = models.CharField(max_length=20)
+    nombre_contacto = models.CharField(max_length=200, blank=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES)
     whatsapp_message_id = models.CharField(max_length=100, blank=True)
     error_detalle = models.TextField(blank=True)
