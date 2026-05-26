@@ -70,27 +70,172 @@ class WebhookView(View):
 class InboxView(LoginRequiredMixin, View):
     template_name = 'whatsapp/inbox.html'
 
+    def _get_convs_qs(self, request):
+        from django.db.models import Q
+        qs = Conversacion.objects.select_related('lead', 'agente').order_by('-ultimo_mensaje_at', '-pk')
+        if not request.user.can_see_all_leads:
+            qs = qs.filter(Q(agente=request.user) | Q(lead__agente=request.user)).distinct()
+        return qs
+
     def get(self, request):
         from django.db.models import Q
-        qs = Conversacion.objects.select_related('lead', 'agente')
-        if not request.user.can_see_all_leads:
-            qs = qs.filter(Q(agente=request.user) | Q(lead__agente=request.user))
+        from apps.leads.models import Lead
+
+        qs = self._get_convs_qs(request)
+
         q = request.GET.get('q', '').strip()
         if q:
-            qs = qs.filter(Q(nombre_contacto__icontains=q) | Q(telefono__icontains=q))
-        paginator = Paginator(qs.distinct(), 30)
-        page = paginator.get_page(request.GET.get('page'))
-        unread_total = Conversacion.objects.filter(mensajes_no_leidos__gt=0).count()
-        if not request.user.can_see_all_leads:
-            unread_total = Conversacion.objects.filter(
-                Q(mensajes_no_leidos__gt=0),
-                Q(agente=request.user) | Q(lead__agente=request.user),
-            ).distinct().count()
+            qs = qs.filter(
+                Q(nombre_contacto__icontains=q) | Q(telefono__icontains=q) |
+                Q(lead__nombre_completo__icontains=q)
+            )
+
+        estado = request.GET.get('estado', '').strip()
+        if estado:
+            qs = qs.filter(lead__estado=estado)
+
+        solo_no_leidos = request.GET.get('no_leidos', '').strip()
+        if solo_no_leidos:
+            qs = qs.filter(mensajes_no_leidos__gt=0)
+
+        conversaciones = list(qs[:100])
+
+        unread_total = self._get_convs_qs(request).filter(mensajes_no_leidos__gt=0).count()
+
+        # Selected conversation
+        conv_pk_str = request.GET.get('conv', '').strip()
+        selected_conv = None
+        mensajes = []
+        plantillas = []
+        agents = None
+        last_msg_id = 0
+
+        if conv_pk_str:
+            try:
+                selected_conv = self._get_convs_qs(request).get(pk=int(conv_pk_str))
+                Conversacion.objects.filter(pk=selected_conv.pk).update(mensajes_no_leidos=0)
+                msgs_qs = selected_conv.mensajes.order_by('timestamp')
+                total = msgs_qs.count()
+                mensajes = list(msgs_qs[max(0, total - 60):])
+                plantillas = PlantillaHSM.objects.filter(activa=True, status=PlantillaHSM.STATUS_APROBADA)
+                agents = User.objects.filter(is_active=True) if request.user.can_see_all_leads else None
+                last_msg = selected_conv.mensajes.order_by('timestamp').last()
+                last_msg_id = last_msg.pk if last_msg else 0
+            except (Conversacion.DoesNotExist, ValueError, TypeError):
+                selected_conv = None
+
         return render(request, self.template_name, {
-            'conversaciones': page,
+            'conversaciones': conversaciones,
             'unread_total': unread_total,
             'q': q,
+            'estado': estado,
+            'solo_no_leidos': solo_no_leidos,
+            'selected_conv': selected_conv,
+            'mensajes': mensajes,
+            'plantillas': plantillas,
+            'agents': agents,
+            'last_msg_id': last_msg_id,
+            'estado_choices': Lead.ESTADO_CHOICES,
         })
+
+    def post(self, request):
+        from django.urls import reverse
+        conv_pk = request.POST.get('conv_pk', '').strip()
+        if not conv_pk:
+            return redirect('whatsapp:inbox')
+
+        conv = get_object_or_404(self._get_convs_qs(request), pk=conv_pk)
+        action = request.POST.get('action', '')
+
+        if action == 'send_text':
+            body = request.POST.get('body', '').strip()
+            if not body:
+                messages.error(request, 'El mensaje no puede estar vacío.')
+            elif not conv.ventana_activa:
+                messages.error(request, 'La ventana de 24hs está cerrada. Usá una plantilla HSM.')
+            else:
+                msg = Mensaje.objects.create(
+                    conversacion=conv, lead=conv.lead,
+                    direccion=Mensaje.DIR_SALIENTE, tipo=Mensaje.TIPO_TEXTO,
+                    contenido=body, status=Mensaje.STATUS_PENDIENTE,
+                    enviado_por=request.user, timestamp=timezone.now(),
+                )
+                send_whatsapp_message_task.delay(msg.pk)
+                Conversacion.objects.filter(pk=conv.pk).update(ultimo_mensaje_at=timezone.now())
+                _auto_contactado(conv)
+
+        elif action == 'send_template':
+            from .sender import send_template_message
+            plantilla_id = request.POST.get('plantilla_id')
+            if not plantilla_id:
+                messages.error(request, 'Seleccioná una plantilla.')
+            else:
+                plantilla = get_object_or_404(PlantillaHSM, pk=plantilla_id)
+                variables_vals = [request.POST.get(f'var_{i + 1}', '') for i in range(len(plantilla.variables))]
+                components = plantilla.build_send_components(variables_vals if any(variables_vals) else None)
+                try:
+                    result = send_template_message(
+                        conv.telefono, plantilla.nombre_meta or plantilla.nombre,
+                        plantilla.idioma, components,
+                    )
+                    wam_id = result.get('messages', [{}])[0].get('id', '')
+                    Mensaje.objects.create(
+                        conversacion=conv, lead=conv.lead,
+                        direccion=Mensaje.DIR_SALIENTE, tipo=Mensaje.TIPO_PLANTILLA,
+                        contenido=plantilla.preview(variables_vals), whatsapp_message_id=wam_id,
+                        status=Mensaje.STATUS_ENVIADO, enviado_por=request.user, timestamp=timezone.now(),
+                    )
+                    Conversacion.objects.filter(pk=conv.pk).update(ultimo_mensaje_at=timezone.now())
+                    _auto_contactado(conv)
+                    messages.success(request, 'Plantilla enviada.')
+                except Exception as e:
+                    messages.error(request, f'Error al enviar la plantilla: {e}')
+
+        elif action == 'send_interactive':
+            if not conv.ventana_activa:
+                messages.error(request, 'La ventana de 24hs está cerrada.')
+            else:
+                body_text = request.POST.get('interactive_body', '').strip()
+                btn_titles = [t.strip() for t in request.POST.getlist('btn_title') if t.strip()]
+                if not body_text or not btn_titles:
+                    messages.error(request, 'El cuerpo y al menos un botón son requeridos.')
+                else:
+                    buttons = [{'id': f'btn_{i}', 'title': title} for i, title in enumerate(btn_titles[:3])]
+                    from .sender import send_interactive_message
+                    try:
+                        result = send_interactive_message(
+                            conv.telefono, body_text, buttons,
+                            request.POST.get('interactive_header', '').strip(),
+                            request.POST.get('interactive_footer', '').strip(),
+                        )
+                        wam_id = result.get('messages', [{}])[0].get('id', '')
+                        Mensaje.objects.create(
+                            conversacion=conv, lead=conv.lead,
+                            direccion=Mensaje.DIR_SALIENTE, tipo=Mensaje.TIPO_INTERACTIVO,
+                            contenido=body_text + '\n' + ' | '.join(f'[{b["title"]}]' for b in buttons),
+                            whatsapp_message_id=wam_id, status=Mensaje.STATUS_ENVIADO,
+                            enviado_por=request.user, timestamp=timezone.now(),
+                        )
+                        Conversacion.objects.filter(pk=conv.pk).update(ultimo_mensaje_at=timezone.now())
+                        messages.success(request, 'Mensaje con botones enviado.')
+                    except Exception as e:
+                        messages.error(request, f'Error al enviar: {e}')
+
+        elif action == 'assign_agent' and request.user.can_see_all_leads:
+            agente_id = request.POST.get('agente_id')
+            conv.agente_id = agente_id or None
+            conv.save(update_fields=['agente_id'])
+            messages.success(request, 'Agente asignado.')
+
+        # Redirect back preserving active filters
+        params = [f'conv={conv.pk}']
+        q = request.POST.get('_q', '')
+        est = request.POST.get('_estado', '')
+        no_leidos = request.POST.get('_no_leidos', '')
+        if q: params.append(f'q={q}')
+        if est: params.append(f'estado={est}')
+        if no_leidos: params.append('no_leidos=1')
+        return redirect(f"{reverse('whatsapp:inbox')}?{'&'.join(params)}")
 
 
 class ConversacionDetailView(LoginRequiredMixin, View):
@@ -230,9 +375,10 @@ class ConversacionMessagesAPIView(LoginRequiredMixin, View):
     """JSON polling endpoint: returns messages newer than since_id."""
 
     def get(self, request, pk):
+        from django.db.models import Q
         qs = Conversacion.objects.all()
         if not request.user.can_see_all_leads:
-            qs = qs.filter(agente=request.user)
+            qs = qs.filter(Q(agente=request.user) | Q(lead__agente=request.user)).distinct()
         conv = get_object_or_404(qs, pk=pk)
         since_id = int(request.GET.get('since_id', 0))
         nuevos = conv.mensajes.filter(pk__gt=since_id).order_by('timestamp')
