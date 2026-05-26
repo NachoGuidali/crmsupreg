@@ -65,7 +65,19 @@
             <td class="small">{{ lead.agente.get_full_name|default:"Sin asignar" }}</td>
             <td class="small text-muted">{{ lead.created_at|date:"d/m/Y" }}</td>
             <td>
-              <a href="{% url 'leads:detail' lead.pk %}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i></a>
+              <div class="d-flex gap-1">
+                <a href="{% url 'leads:detail' lead.pk %}" class="btn btn-sm btn-outline-primary" title="Ver lead"><i class="bi bi-eye"></i></a>
+                {% if lead.telefono and lead.telefono|slice:":1" == "+" %}
+                  {% if lead.conversacion_whatsapp %}
+                  <a href="{% url 'whatsapp:inbox' %}?conv={{ lead.conversacion_whatsapp.pk }}" class="btn btn-sm btn-success" title="Abrir chat WhatsApp"><i class="bi bi-whatsapp"></i></a>
+                  {% else %}
+                  <form method="post" action="{% url 'whatsapp:iniciar_conversacion' lead.pk %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-success" title="Iniciar WhatsApp"><i class="bi bi-whatsapp"></i></button>
+                  </form>
+                  {% endif %}
+                {% endif %}
+              </div>
             </td>
           </tr>
           {% empty %}

@@ -217,7 +217,7 @@ def _process_row(row: dict, plans_by_name: dict, actualizar: bool, default_agent
 
 class LeadQuerysetMixin:
     def get_base_queryset(self):
-        qs = Lead.objects.select_related('agente', 'plan_interes')
+        qs = Lead.objects.select_related('agente', 'plan_interes').prefetch_related('conversacion_whatsapp')
         if not self.request.user.can_see_all_leads:
             qs = qs.filter(agente=self.request.user)
         return qs
@@ -591,7 +591,7 @@ class ContactListView(LoginRequiredMixin, View):
         plan_id = request.GET.get('plan')
         tipo_filter = request.GET.get('tipo', '')
 
-        leads_qs = Lead.objects.select_related('plan_interes', 'agente')
+        leads_qs = Lead.objects.select_related('plan_interes', 'agente').prefetch_related('conversacion_whatsapp')
         clientes_qs = Cliente.objects.select_related('plan', 'agente')
 
         if q:

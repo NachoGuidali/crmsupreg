@@ -96,10 +96,23 @@
               <div class="d-flex gap-1">
                 {% if c.tipo_contacto == 'cliente' %}
                 <a href="{% url 'clientes:detail' c.pk %}" class="btn btn-sm btn-outline-secondary" title="Ver"><i class="bi bi-eye"></i></a>
+                {% if c.telefono and c.telefono|slice:":1" == "+" %}
+                <form method="post" action="{% url 'whatsapp:iniciar_conversacion_cliente' c.pk %}" class="d-inline">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-sm btn-outline-success" title="WhatsApp"><i class="bi bi-whatsapp"></i></button>
+                </form>
+                {% endif %}
                 {% else %}
                 <a href="{% url 'leads:detail' c.pk %}" class="btn btn-sm btn-outline-secondary" title="Ver"><i class="bi bi-eye"></i></a>
-                {% if c.conversacion_whatsapp %}
-                <a href="{% url 'whatsapp:conversacion' c.conversacion_whatsapp.pk %}" class="btn btn-sm btn-outline-success" title="WhatsApp"><i class="bi bi-whatsapp"></i></a>
+                {% if c.telefono and c.telefono|slice:":1" == "+" %}
+                  {% if c.conversacion_whatsapp %}
+                  <a href="{% url 'whatsapp:inbox' %}?conv={{ c.conversacion_whatsapp.pk }}" class="btn btn-sm btn-success" title="Abrir chat WhatsApp"><i class="bi bi-whatsapp"></i></a>
+                  {% else %}
+                  <form method="post" action="{% url 'whatsapp:iniciar_conversacion' c.pk %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-success" title="Iniciar WhatsApp"><i class="bi bi-whatsapp"></i></button>
+                  </form>
+                  {% endif %}
                 {% endif %}
                 {% endif %}
               </div>

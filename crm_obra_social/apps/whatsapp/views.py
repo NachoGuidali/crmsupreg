@@ -648,6 +648,38 @@ class PlantillaSyncView(LoginRequiredMixin, View):
         return redirect('whatsapp:plantilla_list')
 
 
+class IniciarConversacionClienteView(LoginRequiredMixin, View):
+    """Find or create a Conversacion for a Cliente and redirect to the inbox."""
+
+    def post(self, request, cliente_pk):
+        from apps.clientes.models import Cliente
+        from django.urls import reverse
+        cliente = get_object_or_404(Cliente, pk=cliente_pk)
+
+        if not cliente.telefono or not cliente.telefono.startswith('+'):
+            messages.error(request, 'El cliente no tiene un número válido en formato internacional (+...).')
+            return redirect('clientes:detail', pk=cliente_pk)
+
+        conv, created = Conversacion.objects.get_or_create(
+            telefono=cliente.telefono,
+            defaults={'nombre_contacto': cliente.nombre_completo, 'agente': cliente.agente},
+        )
+        if not created:
+            fields = []
+            if not conv.nombre_contacto:
+                conv.nombre_contacto = cliente.nombre_completo
+                fields.append('nombre_contacto')
+            if not conv.agente_id and cliente.agente_id:
+                conv.agente_id = cliente.agente_id
+                fields.append('agente')
+            if fields:
+                conv.save(update_fields=fields)
+
+        if created:
+            messages.success(request, f'Conversación iniciada con {cliente.nombre_completo}.')
+        return redirect(f"{reverse('whatsapp:inbox')}?conv={conv.pk}")
+
+
 class IniciarConversacionView(LoginRequiredMixin, View):
     """Create a Conversacion for a lead and redirect to the chat."""
 

@@ -14,6 +14,7 @@ urlpatterns = [
     path('conversacion/<int:pk>/', views.ConversacionDetailView.as_view(), name='conversacion'),
     path('conversacion/<int:pk>/mensajes/', views.ConversacionMessagesAPIView.as_view(), name='conversacion_messages_api'),
     path('conversacion/iniciar/<int:lead_pk>/', views.IniciarConversacionView.as_view(), name='iniciar_conversacion'),
+    path('conversacion/iniciar-cliente/<int:cliente_pk>/', views.IniciarConversacionClienteView.as_view(), name='iniciar_conversacion_cliente'),
 
     # Bot
     path('bot/', views.BotReglaListView.as_view(), name='bot_list'),

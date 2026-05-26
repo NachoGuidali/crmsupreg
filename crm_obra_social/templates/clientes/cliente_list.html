@@ -70,7 +70,15 @@
             <td class="small text-muted">{{ c.agente.get_full_name|default:"—" }}</td>
             <td class="small text-muted">{{ c.created_at|date:"d/m/Y" }}</td>
             <td>
-              <a href="{% url 'clientes:detail' c.pk %}" class="btn btn-sm btn-outline-secondary" title="Ver"><i class="bi bi-eye"></i></a>
+              <div class="d-flex gap-1">
+                <a href="{% url 'clientes:detail' c.pk %}" class="btn btn-sm btn-outline-secondary" title="Ver"><i class="bi bi-eye"></i></a>
+                {% if c.telefono and c.telefono|slice:":1" == "+" %}
+                <form method="post" action="{% url 'whatsapp:iniciar_conversacion_cliente' c.pk %}" class="d-inline">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-sm btn-outline-success" title="Enviar mensaje por WhatsApp"><i class="bi bi-whatsapp"></i></button>
+                </form>
+                {% endif %}
+              </div>
             </td>
           </tr>
           {% empty %}
