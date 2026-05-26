@@ -361,6 +361,7 @@ class LeadUpdateView(LoginRequiredMixin, LeadQuerysetMixin, UpdateView):
         return ctx
 
     def form_valid(self, form):
+        form.save()
         messages.success(self.request, 'Lead actualizado correctamente.')
         return redirect('leads:detail', pk=self.object.pk)
 
