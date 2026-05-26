@@ -88,6 +88,13 @@ LeadCSVImportForm = LeadImportForm
 class EstadoChangeForm(forms.Form):
     estado = forms.ChoiceField(choices=Lead.ESTADO_CHOICES, widget=forms.Select(attrs={'class': 'form-select'}))
     nota = forms.CharField(required=False, widget=forms.Textarea(attrs={'rows': 2, 'class': 'form-control', 'placeholder': 'Nota opcional sobre el cambio de estado'}))
+    motivo_perdida = forms.CharField(required=False, widget=forms.Textarea(attrs={'rows': 2, 'class': 'form-control', 'placeholder': 'Motivo por el que el lead no avanzó (obligatorio)'}))
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get('estado') == Lead.ESTADO_PERDIDO and not cleaned.get('motivo_perdida', '').strip():
+            self.add_error('motivo_perdida', 'Indicá el motivo de pérdida antes de continuar.')
+        return cleaned
 
 
 class CampoPersonalizadoForm(forms.ModelForm):

@@ -81,6 +81,10 @@
             <li><a class="dropdown-item" href="{% url 'users:list' %}"><i class="bi bi-person-gear"></i> Usuarios</a></li>
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="{% url 'leads:campos' %}"><i class="bi bi-sliders"></i> Campos personalizados</a></li>
+            {% if user.role == 'superadmin' %}
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="{% url 'whatsapp:config' %}"><i class="bi bi-whatsapp text-success"></i> Configurar WhatsApp</a></li>
+            {% endif %}
           </ul>
         </li>
         {% endif %}

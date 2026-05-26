@@ -1,5 +1,60 @@
 from django.conf import settings
+from django.core.cache import cache
 from django.db import models
+
+
+class ConfiguracionWhatsApp(models.Model):
+    """Singleton — stores WhatsApp Cloud API credentials editable from the UI."""
+    access_token = models.CharField(max_length=500, blank=True, verbose_name='Access Token')
+    phone_number_id = models.CharField(max_length=50, blank=True, verbose_name='Phone Number ID')
+    business_account_id = models.CharField(max_length=50, blank=True, verbose_name='Business Account ID')
+    app_secret = models.CharField(max_length=200, blank=True, verbose_name='App Secret')
+    webhook_verify_token = models.CharField(max_length=100, default='verify_token_default', verbose_name='Webhook Verify Token')
+
+    class Meta:
+        verbose_name = 'Configuración WhatsApp'
+        verbose_name_plural = 'Configuración WhatsApp'
+
+    def __str__(self):
+        return 'Configuración WhatsApp'
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+        cache.delete('whatsapp_config')
+
+    @classmethod
+    def get_config(cls):
+        config = cache.get('whatsapp_config')
+        if config is None:
+            try:
+                obj = cls.objects.get(pk=1)
+                config = {
+                    'access_token': obj.access_token,
+                    'phone_number_id': obj.phone_number_id,
+                    'business_account_id': obj.business_account_id,
+                    'app_secret': obj.app_secret,
+                    'webhook_verify_token': obj.webhook_verify_token,
+                }
+            except cls.DoesNotExist:
+                config = {}
+            cache.set('whatsapp_config', config, 300)
+        return config
+
+    @classmethod
+    def get_setting(cls, key):
+        """Read a setting from DB first, fall back to Django settings."""
+        db_val = cls.get_config().get(key)
+        if db_val:
+            return db_val
+        settings_map = {
+            'access_token': 'WHATSAPP_ACCESS_TOKEN',
+            'phone_number_id': 'WHATSAPP_PHONE_NUMBER_ID',
+            'business_account_id': 'WHATSAPP_BUSINESS_ACCOUNT_ID',
+            'app_secret': 'WHATSAPP_APP_SECRET',
+            'webhook_verify_token': 'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
+        }
+        return getattr(settings, settings_map.get(key, ''), '')
 
 
 class Conversacion(models.Model):

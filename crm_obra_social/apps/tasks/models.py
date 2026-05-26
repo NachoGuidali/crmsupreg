@@ -26,8 +26,18 @@ class Tarea(models.Model):
         (STATUS_VENCIDA, 'Vencida'),
     ]
 
-    lead = models.ForeignKey('leads.Lead', on_delete=models.CASCADE, related_name='tareas')
-    agente = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='tareas')
+    lead = models.ForeignKey(
+        'leads.Lead', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='tareas',
+    )
+    cliente = models.ForeignKey(
+        'clientes.Cliente', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='tareas',
+    )
+    agente = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='tareas',
+    )
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default=TIPO_SEGUIMIENTO)
     descripcion = models.TextField(verbose_name='Descripción')
     fecha_programada = models.DateTimeField(verbose_name='Fecha y hora programada')
@@ -43,7 +53,20 @@ class Tarea(models.Model):
         ordering = ['fecha_programada']
 
     def __str__(self):
-        return f'{self.get_tipo_display()} — {self.lead} @ {self.fecha_programada.strftime("%d/%m/%Y %H:%M")}'
+        contacto = self.lead or self.cliente or 'Sin contacto'
+        return f'{self.get_tipo_display()} — {contacto} @ {self.fecha_programada.strftime("%d/%m/%Y %H:%M")}'
+
+    @property
+    def contacto(self):
+        return self.lead or self.cliente
+
+    @property
+    def contacto_nombre(self):
+        if self.lead:
+            return self.lead.nombre_completo
+        if self.cliente:
+            return self.cliente.nombre_completo
+        return '—'
 
     @property
     def is_vencida(self):

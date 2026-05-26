@@ -55,6 +55,7 @@ class ClienteDetailView(LoginRequiredMixin, DetailView):
             activo=True,
             alcance__in=[CampoPersonalizado.ALCANCE_CLIENTES, CampoPersonalizado.ALCANCE_AMBOS]
         )
+        ctx['tareas'] = self.object.tareas.select_related('agente').order_by('-fecha_programada')[:10]
         return ctx
 
     def post(self, request, pk):

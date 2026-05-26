@@ -156,6 +156,12 @@ class Lead(models.Model):
         help_text='Columnas adicionales importadas desde CSV/Excel.',
     )
 
+    motivo_perdida = models.TextField(
+        blank=True,
+        verbose_name='Motivo de pérdida',
+        help_text='Completar cuando el lead se marca como "Perdido / No interesado".',
+    )
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

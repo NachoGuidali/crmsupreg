@@ -15,7 +15,7 @@ from django.views.generic import ListView, CreateView, UpdateView, DeleteView
 from django.urls import reverse_lazy
 
 from apps.users.models import User
-from .models import Conversacion, Mensaje, PlantillaHSM
+from .models import Conversacion, Mensaje, PlantillaHSM, ConfiguracionWhatsApp
 from .tasks import process_incoming_message, send_whatsapp_message_task
 from .webhook import parse_incoming_webhook, verify_signature
 
@@ -29,7 +29,8 @@ class WebhookView(View):
         mode = request.GET.get('hub.mode')
         token = request.GET.get('hub.verify_token')
         challenge = request.GET.get('hub.challenge')
-        if mode == 'subscribe' and token == settings.WHATSAPP_WEBHOOK_VERIFY_TOKEN:
+        from .models import ConfiguracionWhatsApp
+        if mode == 'subscribe' and token == ConfiguracionWhatsApp.get_setting('webhook_verify_token'):
             logger.info('WhatsApp webhook verified successfully.')
             return HttpResponse(challenge, content_type='text/plain')
         return HttpResponse('Forbidden', status=403)
@@ -37,7 +38,8 @@ class WebhookView(View):
     def post(self, request):
         """Receive and queue incoming messages."""
         sig = request.headers.get('X-Hub-Signature-256', '')
-        if not verify_signature(request.body, sig, getattr(settings, 'WHATSAPP_APP_SECRET', '')):
+        from .models import ConfiguracionWhatsApp
+        if not verify_signature(request.body, sig, ConfiguracionWhatsApp.get_setting('app_secret')):
             logger.warning('Invalid webhook signature — request rejected')
             return HttpResponse('Forbidden', status=403)
         try:
@@ -515,3 +517,62 @@ class IniciarConversacionView(LoginRequiredMixin, View):
             messages.info(request, 'Ya existe una conversación con este contacto.')
 
         return redirect('whatsapp:conversacion', pk=conv.pk)
+
+
+class WhatsAppConfigView(LoginRequiredMixin, View):
+    """Superadmin-only view to configure WhatsApp Cloud API credentials."""
+    template_name = 'whatsapp/config.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated or request.user.role != 'superadmin':
+            from django.http import HttpResponseForbidden
+            return HttpResponseForbidden('Solo superadministradores pueden acceder a esta sección.')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request):
+        try:
+            config = ConfiguracionWhatsApp.objects.get(pk=1)
+        except ConfiguracionWhatsApp.DoesNotExist:
+            config = ConfiguracionWhatsApp()
+        return render(request, self.template_name, {'config': config})
+
+    def post(self, request):
+        try:
+            config = ConfiguracionWhatsApp.objects.get(pk=1)
+        except ConfiguracionWhatsApp.DoesNotExist:
+            config = ConfiguracionWhatsApp()
+
+        config.access_token = request.POST.get('access_token', '').strip()
+        config.phone_number_id = request.POST.get('phone_number_id', '').strip()
+        config.business_account_id = request.POST.get('business_account_id', '').strip()
+        config.app_secret = request.POST.get('app_secret', '').strip()
+        config.webhook_verify_token = request.POST.get('webhook_verify_token', '').strip() or 'verify_token_default'
+        config.save()
+        messages.success(request, 'Configuración de WhatsApp guardada correctamente.')
+        return redirect('whatsapp:config')
+
+
+class WhatsAppTestConnectionView(LoginRequiredMixin, View):
+    """AJAX: test WhatsApp credentials by calling Meta's phone number endpoint."""
+
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated or request.user.role != 'superadmin':
+            return JsonResponse({'ok': False, 'error': 'Sin permisos'}, status=403)
+        return super().dispatch(request, *args, **kwargs)
+
+    def post(self, request):
+        import requests as req
+        phone_number_id = ConfiguracionWhatsApp.get_setting('phone_number_id')
+        access_token = ConfiguracionWhatsApp.get_setting('access_token')
+        if not phone_number_id or not access_token:
+            return JsonResponse({'ok': False, 'error': 'Faltan credenciales (Access Token o Phone Number ID)'})
+        try:
+            url = f'https://graph.facebook.com/v19.0/{phone_number_id}'
+            resp = req.get(url, headers={'Authorization': f'Bearer {access_token}'}, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                display = data.get('display_phone_number', '') or data.get('verified_name', '')
+                return JsonResponse({'ok': True, 'numero': display})
+            return JsonResponse({'ok': False, 'error': f'Meta respondió {resp.status_code}: {resp.text[:200]}'})
+        except Exception as e:
+            return JsonResponse({'ok': False, 'error': str(e)})

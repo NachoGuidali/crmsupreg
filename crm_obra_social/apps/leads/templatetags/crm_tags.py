@@ -7,5 +7,5 @@ register = template.Library()
 def dict_key(d, key):
     """Access a dict value by key in templates: {{ my_dict|dict_key:variable }}"""
     if isinstance(d, dict):
-        return d.get(key, 0)
-    return 0
+        return d.get(key, '')
+    return ''

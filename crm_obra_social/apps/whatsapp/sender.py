@@ -9,9 +9,15 @@ from django.utils import timezone
 logger = logging.getLogger('apps.whatsapp')
 
 
+def _wa(key):
+    """Read a WhatsApp credential from DB config (falls back to settings/env)."""
+    from .models import ConfiguracionWhatsApp
+    return ConfiguracionWhatsApp.get_setting(key)
+
+
 def _get_headers():
     return {
-        'Authorization': f'Bearer {settings.WHATSAPP_ACCESS_TOKEN}',
+        'Authorization': f'Bearer {_wa("access_token")}',
         'Content-Type': 'application/json',
     }
 
@@ -34,7 +40,7 @@ def _log_request(endpoint, method, request_body, response, duracion_ms):
 
 def send_text_message(to: str, body: str) -> dict:
     """Send a free-form text message (must be within 24h window)."""
-    url = f'{settings.WHATSAPP_API_URL}/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages'
+    url = f'{settings.WHATSAPP_API_URL}/{_wa('phone_number_id')}/messages'
     payload = {
         'messaging_product': 'whatsapp',
         'recipient_type': 'individual',
@@ -59,7 +65,7 @@ def send_text_message(to: str, body: str) -> dict:
 
 def send_template_message(to: str, template_name: str, language: str, components: list) -> dict:
     """Send an HSM template message."""
-    url = f'{settings.WHATSAPP_API_URL}/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages'
+    url = f'{settings.WHATSAPP_API_URL}/{_wa('phone_number_id')}/messages'
     payload = {
         'messaging_product': 'whatsapp',
         'to': to,
@@ -87,7 +93,7 @@ def send_template_message(to: str, template_name: str, language: str, components
 
 def send_document_message(to: str, document_url: str, filename: str, caption: str = '') -> dict:
     """Send a document (PDF, etc.) by URL."""
-    url = f'{settings.WHATSAPP_API_URL}/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages'
+    url = f'{settings.WHATSAPP_API_URL}/{_wa('phone_number_id')}/messages'
     payload = {
         'messaging_product': 'whatsapp',
         'to': to,
@@ -112,7 +118,7 @@ def send_interactive_message(to: str, body_text: str, buttons: list, header_text
     Send an interactive quick-reply button message (max 3 buttons).
     buttons: [{"id": "btn_1", "title": "Texto botón"}]
     """
-    url = f'{settings.WHATSAPP_API_URL}/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages'
+    url = f'{settings.WHATSAPP_API_URL}/{_wa('phone_number_id')}/messages'
     interactive = {
         'type': 'button',
         'body': {'text': body_text},
@@ -150,7 +156,7 @@ def send_interactive_message(to: str, body_text: str, buttons: list, header_text
 
 
 def mark_message_as_read(whatsapp_message_id: str) -> None:
-    url = f'{settings.WHATSAPP_API_URL}/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages'
+    url = f'{settings.WHATSAPP_API_URL}/{_wa('phone_number_id')}/messages'
     payload = {
         'messaging_product': 'whatsapp',
         'status': 'read',
@@ -180,9 +186,9 @@ def get_media_url(media_id: str) -> str:
 
 def submit_template_to_meta(plantilla) -> dict:
     """Submit a PlantillaHSM to Meta Business API for approval."""
-    if not settings.WHATSAPP_BUSINESS_ACCOUNT_ID:
+    if not _wa('business_account_id'):
         raise ValueError('WHATSAPP_BUSINESS_ACCOUNT_ID no está configurado en .env')
-    url = f'{settings.WHATSAPP_API_URL}/{settings.WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates'
+    url = f'{settings.WHATSAPP_API_URL}/{_wa('business_account_id')}/message_templates'
     template_name = (plantilla.nombre_meta or plantilla.nombre).lower().replace(' ', '_')
     payload = {
         'name': template_name,
@@ -209,10 +215,10 @@ def submit_template_to_meta(plantilla) -> dict:
 
 def sync_template_status_from_meta(plantilla) -> dict:
     """Fetch current status of a template from Meta. Returns the template data dict or {}."""
-    if not settings.WHATSAPP_BUSINESS_ACCOUNT_ID:
+    if not _wa('business_account_id'):
         raise ValueError('WHATSAPP_BUSINESS_ACCOUNT_ID no está configurado en .env')
     template_name = (plantilla.nombre_meta or plantilla.nombre).lower().replace(' ', '_')
-    url = f'{settings.WHATSAPP_API_URL}/{settings.WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates'
+    url = f'{settings.WHATSAPP_API_URL}/{_wa('business_account_id')}/message_templates'
     params = {'name': template_name, 'fields': 'name,status,id,quality_score'}
     start = time.monotonic()
     response = None

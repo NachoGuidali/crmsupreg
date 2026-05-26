@@ -12,7 +12,7 @@ from .models import Tarea
 
 class TareaQuerysetMixin:
     def get_base_queryset(self):
-        qs = Tarea.objects.select_related('lead', 'agente')
+        qs = Tarea.objects.select_related('lead', 'cliente', 'agente')
         if not self.request.user.can_see_all_leads:
             qs = qs.filter(agente=self.request.user)
         return qs
@@ -68,14 +68,23 @@ class TareaCreateView(LoginRequiredMixin, View):
             return get_object_or_404(qs, pk=lead_pk)
         return None
 
+    def _get_cliente(self, request):
+        from apps.clientes.models import Cliente
+        cliente_pk = request.GET.get('cliente') or request.POST.get('cliente')
+        if cliente_pk:
+            return get_object_or_404(Cliente, pk=cliente_pk)
+        return None
+
     def get(self, request):
         lead = self._get_lead(request)
-        form = TareaForm(lead=lead, user=request.user)
-        return render(request, self.template_name, {'form': form, 'lead': lead})
+        cliente = self._get_cliente(request)
+        form = TareaForm(lead=lead, cliente=cliente, user=request.user)
+        return render(request, self.template_name, {'form': form, 'lead': lead, 'cliente': cliente})
 
     def post(self, request):
         lead = self._get_lead(request)
-        form = TareaForm(request.POST, lead=lead, user=request.user)
+        cliente = self._get_cliente(request)
+        form = TareaForm(request.POST, lead=lead, cliente=cliente, user=request.user)
         if form.is_valid():
             tarea = form.save(commit=False)
             if not tarea.agente:
@@ -84,8 +93,10 @@ class TareaCreateView(LoginRequiredMixin, View):
             messages.success(request, 'Tarea creada.')
             if lead:
                 return redirect('leads:detail', pk=lead.pk)
+            if cliente:
+                return redirect('clientes:detail', pk=cliente.pk)
             return redirect('tasks:list')
-        return render(request, self.template_name, {'form': form, 'lead': lead})
+        return render(request, self.template_name, {'form': form, 'lead': lead, 'cliente': cliente})
 
 
 class TareaCompletarView(LoginRequiredMixin, TareaQuerysetMixin, View):
@@ -104,5 +115,9 @@ class TareaCompletarView(LoginRequiredMixin, TareaQuerysetMixin, View):
             t.status = Tarea.STATUS_COMPLETADA
             t.save()
             messages.success(request, 'Tarea marcada como completada.')
-            return redirect('leads:detail', pk=tarea.lead_id)
+            if tarea.lead_id:
+                return redirect('leads:detail', pk=tarea.lead_id)
+            if tarea.cliente_id:
+                return redirect('clientes:detail', pk=tarea.cliente_id)
+            return redirect('tasks:list')
         return render(request, self.template_name, {'form': form, 'tarea': tarea})

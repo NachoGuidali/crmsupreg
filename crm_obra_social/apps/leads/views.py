@@ -452,7 +452,12 @@ class LeadEstadoChangeView(LoginRequiredMixin, LeadQuerysetMixin, View):
         if form.is_valid():
             estado_anterior = lead.estado
             lead.estado = form.cleaned_data['estado']
-            lead.save(update_fields=['estado', 'updated_at'])
+            motivo = form.cleaned_data.get('motivo_perdida', '').strip()
+            update_fields = ['estado', 'updated_at']
+            if motivo:
+                lead.motivo_perdida = motivo
+                update_fields.append('motivo_perdida')
+            lead.save(update_fields=update_fields)
             HistorialEstado.objects.create(
                 lead=lead,
                 estado_anterior=estado_anterior,
@@ -461,6 +466,10 @@ class LeadEstadoChangeView(LoginRequiredMixin, LeadQuerysetMixin, View):
                 nota=form.cleaned_data.get('nota', ''),
             )
             messages.success(request, f'Estado cambiado a "{lead.get_estado_display()}".')
+        else:
+            for field, errs in form.errors.items():
+                for err in errs:
+                    messages.error(request, err)
         return redirect('leads:detail', pk=pk)
 
 

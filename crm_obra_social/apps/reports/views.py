@@ -30,9 +30,13 @@ class DashboardView(LoginRequiredMixin, View):
             tarea_qs = tarea_qs.filter(agente=user)
             conv_qs = conv_qs.filter(agente=user)
 
-        # Leads by state
+        # Leads by state — single aggregated query instead of N queries
+        estado_counts = {
+            row['estado']: row['total']
+            for row in lead_qs.values('estado').annotate(total=Count('id'))
+        }
         leads_por_estado = {
-            estado: lead_qs.filter(estado=estado).count()
+            estado: estado_counts.get(estado, 0)
             for estado, _ in Lead.ESTADO_CHOICES
         }
 
@@ -79,9 +83,14 @@ class ReporteConversionView(LoginRequiredMixin, View):
         if not request.user.can_see_all_leads:
             lead_qs = lead_qs.filter(agente=request.user)
 
-        funnel = []
-        for estado, label in Lead.ESTADO_CHOICES:
-            funnel.append({'estado': estado, 'label': label, 'count': lead_qs.filter(estado=estado).count()})
+        estado_counts = {
+            row['estado']: row['total']
+            for row in lead_qs.values('estado').annotate(total=Count('id'))
+        }
+        funnel = [
+            {'estado': estado, 'label': label, 'count': estado_counts.get(estado, 0)}
+            for estado, label in Lead.ESTADO_CHOICES
+        ]
 
         por_origen = lead_qs.values('origen').annotate(total=Count('id')).order_by('-total')
         por_agente = lead_qs.values('agente__first_name', 'agente__last_name').annotate(total=Count('id')).order_by('-total')

@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Configuración WhatsApp{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-2 mb-4">
+  <i class="bi bi-whatsapp text-success fs-3"></i>
+  <div>
+    <h4 class="mb-0 fw-bold">Configuración WhatsApp</h4>
+    <small class="text-muted">Credenciales de la API de Meta / WhatsApp Business Cloud</small>
+  </div>
+</div>
+
+<div class="row g-4" style="max-width:820px;">
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <form method="post" id="configForm">
+          {% csrf_token %}
+          <div class="row g-3">
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Access Token <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <input type="password" name="access_token" id="access_token"
+                       value="{{ config.access_token }}"
+                       class="form-control font-monospace"
+                       placeholder="EAAxxxxxxxxxxxxxxxx...">
+                <button type="button" class="btn btn-outline-secondary" onclick="toggleField('access_token')">
+                  <i class="bi bi-eye" id="access_token_icon"></i>
+                </button>
+              </div>
+              <div class="form-text">Token de acceso permanente de tu app de Meta Business. Se obtiene en <strong>Meta for Developers → Tu app → WhatsApp → Configuración de API</strong>.</div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Phone Number ID <span class="text-danger">*</span></label>
+              <input type="text" name="phone_number_id" value="{{ config.phone_number_id }}"
+                     class="form-control font-monospace" placeholder="123456789012345">
+              <div class="form-text">ID numérico del número de teléfono en Meta (no es el número en sí).</div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Business Account ID</label>
+              <input type="text" name="business_account_id" value="{{ config.business_account_id }}"
+                     class="form-control font-monospace" placeholder="987654321098765">
+              <div class="form-text">ID de la cuenta de WhatsApp Business (WABA). Requerido para enviar plantillas.</div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">App Secret</label>
+              <div class="input-group">
+                <input type="password" name="app_secret" id="app_secret"
+                       value="{{ config.app_secret }}"
+                       class="form-control font-monospace" placeholder="abcdef1234567890...">
+                <button type="button" class="btn btn-outline-secondary" onclick="toggleField('app_secret')">
+                  <i class="bi bi-eye" id="app_secret_icon"></i>
+                </button>
+              </div>
+              <div class="form-text">Secreto de la app. Usado para verificar la firma del webhook.</div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Webhook Verify Token</label>
+              <input type="text" name="webhook_verify_token" value="{{ config.webhook_verify_token|default:'verify_token_default' }}"
+                     class="form-control font-monospace">
+              <div class="form-text">Token que configurás en Meta al registrar tu webhook. Podés usar cualquier string.</div>
+            </div>
+
+          </div>
+
+          <div class="mt-4 d-flex gap-2 align-items-center flex-wrap">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-floppy"></i> Guardar configuración</button>
+            <button type="button" class="btn btn-outline-success" id="testBtn" onclick="testConnection()">
+              <i class="bi bi-wifi"></i> Probar conexión
+            </button>
+            <span id="testResult" class="ms-2 small"></span>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card border-0 bg-light">
+      <div class="card-body">
+        <h6 class="fw-bold mb-3"><i class="bi bi-link-45deg"></i> URL del Webhook</h6>
+        <p class="text-muted small mb-2">Configurá esta URL en <strong>Meta for Developers → Tu app → WhatsApp → Configuración</strong>:</p>
+        <div class="input-group">
+          <input type="text" class="form-control font-monospace form-control-sm"
+                 value="https://crm.supregsolutions.com/whatsapp/webhook/" readonly id="webhookUrl">
+          <button class="btn btn-outline-secondary btn-sm" onclick="copyWebhookUrl()">
+            <i class="bi bi-clipboard"></i> Copiar
+          </button>
+        </div>
+        <div class="mt-3">
+          <h6 class="fw-semibold small mb-1">Suscribir los siguientes campos del webhook:</h6>
+          <code class="small">messages</code>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% block extra_js %}
+<script>
+function toggleField(id) {
+  const input = document.getElementById(id);
+  const icon = document.getElementById(id + '_icon');
+  if (input.type === 'password') {
+    input.type = 'text';
+    icon.className = 'bi bi-eye-slash';
+  } else {
+    input.type = 'password';
+    icon.className = 'bi bi-eye';
+  }
+}
+
+function copyWebhookUrl() {
+  const url = document.getElementById('webhookUrl').value;
+  navigator.clipboard.writeText(url).then(() => {
+    const btn = event.target.closest('button');
+    btn.innerHTML = '<i class="bi bi-check-lg"></i> Copiado';
+    setTimeout(() => btn.innerHTML = '<i class="bi bi-clipboard"></i> Copiar', 2000);
+  });
+}
+
+function testConnection() {
+  const btn = document.getElementById('testBtn');
+  const result = document.getElementById('testResult');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Probando...';
+  result.textContent = '';
+
+  fetch('{% url "whatsapp:config_test" %}', {
+    method: 'POST',
+    headers: {'X-CSRFToken': '{{ csrf_token }}'},
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      result.innerHTML = '<span class="text-success"><i class="bi bi-check-circle-fill"></i> Conexión exitosa' + (data.numero ? ' — Número: <strong>' + data.numero + '</strong>' : '') + '</span>';
+    } else {
+      result.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> Error: ' + data.error + '</span>';
+    }
+  })
+  .catch(e => {
+    result.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> Error de red</span>';
+  })
+  .finally(() => {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-wifi"></i> Probar conexión';
+  });
+}
+</script>
+{% endblock %}
+{% endblock %}

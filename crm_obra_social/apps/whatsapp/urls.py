@@ -22,6 +22,10 @@ urlpatterns = [
     path('bot/<int:pk>/toggle/', views.BotReglaToggleView.as_view(), name='bot_toggle'),
     path('bot/<int:pk>/eliminar/', views.BotReglaDeleteView.as_view(), name='bot_delete'),
 
+    # Configuration (superadmin only)
+    path('configuracion/', views.WhatsAppConfigView.as_view(), name='config'),
+    path('configuracion/test/', views.WhatsAppTestConnectionView.as_view(), name='config_test'),
+
     # Templates
     path('plantillas/', views.PlantillaListView.as_view(), name='plantilla_list'),
     path('plantillas/nueva/', views.PlantillaCreateView.as_view(), name='plantilla_create'),
