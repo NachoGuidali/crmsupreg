@@ -521,11 +521,11 @@ class ContactListView(LoginRequiredMixin, View):
         # Tag each object so the template can distinguish them
         leads_list = list(leads_qs)
         for obj in leads_list:
-            obj._tipo = 'lead'
+            obj.tipo_contacto = 'lead'
 
         clientes_list = list(clientes_qs)
         for obj in clientes_list:
-            obj._tipo = 'cliente'
+            obj.tipo_contacto = 'cliente'
 
         if tipo_filter == 'lead':
             combined = leads_list

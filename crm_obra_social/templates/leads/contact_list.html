@@ -65,12 +65,12 @@
           <tr>
             <td>
               <div class="d-flex align-items-center gap-2">
-                <div class="rounded-circle {% if c._tipo == 'cliente' %}bg-success{% else %}bg-primary{% endif %} text-white d-flex align-items-center justify-content-center flex-shrink-0"
+                <div class="rounded-circle {% if c.tipo_contacto == 'cliente' %}bg-success{% else %}bg-primary{% endif %} text-white d-flex align-items-center justify-content-center flex-shrink-0"
                      style="width:34px;height:34px;font-size:.85rem;font-weight:600;">
                   {{ c.nombre_completo|slice:":1"|upper }}
                 </div>
                 <div>
-                  {% if c._tipo == 'cliente' %}
+                  {% if c.tipo_contacto == 'cliente' %}
                   <a href="{% url 'clientes:detail' c.pk %}" class="fw-semibold text-decoration-none text-dark">{{ c.nombre_completo }}</a>
                   {% else %}
                   <a href="{% url 'leads:detail' c.pk %}" class="fw-semibold text-decoration-none text-dark">{{ c.nombre_completo }}</a>
@@ -82,10 +82,10 @@
             <td class="font-monospace small">{{ c.telefono|default:"—" }}</td>
             <td class="small text-muted">{{ c.email|default:"—" }}</td>
             <td class="small">
-              {% if c._tipo == 'cliente' %}{{ c.plan|default:"—" }}{% else %}{{ c.plan_interes|default:"—" }}{% endif %}
+              {% if c.tipo_contacto == 'cliente' %}{{ c.plan|default:"—" }}{% else %}{{ c.plan_interes|default:"—" }}{% endif %}
             </td>
             <td>
-              {% if c._tipo == 'cliente' %}
+              {% if c.tipo_contacto == 'cliente' %}
               <span class="badge bg-success">Cliente</span>
               {% if c.numero_afiliado %}<span class="ms-1 text-muted small">{{ c.numero_afiliado }}</span>{% endif %}
               {% else %}
@@ -94,7 +94,7 @@
             </td>
             <td>
               <div class="d-flex gap-1">
-                {% if c._tipo == 'cliente' %}
+                {% if c.tipo_contacto == 'cliente' %}
                 <a href="{% url 'clientes:detail' c.pk %}" class="btn btn-sm btn-outline-secondary" title="Ver"><i class="bi bi-eye"></i></a>
                 {% else %}
                 <a href="{% url 'leads:detail' c.pk %}" class="btn btn-sm btn-outline-secondary" title="Ver"><i class="bi bi-eye"></i></a>
