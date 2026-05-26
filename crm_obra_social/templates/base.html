@@ -72,6 +72,7 @@
             <li><a class="dropdown-item" href="{% url 'campaigns:list' %}"><i class="bi bi-megaphone"></i> Campañas</a></li>
             <li><a class="dropdown-item" href="{% url 'whatsapp:plantilla_list' %}"><i class="bi bi-file-text"></i> Plantillas HSM</a></li>
             <li><a class="dropdown-item" href="{% url 'whatsapp:bot_list' %}"><i class="bi bi-robot"></i> Bot WhatsApp</a></li>
+            <li><a class="dropdown-item {% block nav_chatbot %}{% endblock %}" href="{% url 'chatbot:list' %}"><i class="bi bi-diagram-3"></i> Chatbot Visual</a></li>
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="{% url 'automations:list' %}"><i class="bi bi-lightning-charge"></i> Automatizaciones</a></li>
             <li><a class="dropdown-item" href="{% url 'integrations:list' %}"><i class="bi bi-plug"></i> Integraciones API</a></li>
