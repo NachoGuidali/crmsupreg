@@ -26,11 +26,42 @@ _KNOWN_COLUMNS = {
     'email', 'correo', 'mail',
     'dni', 'documento', 'cedula', 'rut',
     'localidad', 'ciudad', 'city',
-    'provincia', 'province', 'estado', 'region',
+    'provincia', 'province', 'region',
+    'estado', 'status', 'estado_lead',
+    'prioridad', 'priority',
     'notas', 'notes', 'observaciones', 'comentarios',
     'plan', 'plan_interes',
     'origen', 'origin', 'source', 'fuente',
     'grupo_familiar', 'grupo',
+}
+
+_ESTADO_MAP = {
+    'nuevo': Lead.ESTADO_NUEVO,
+    'new': Lead.ESTADO_NUEVO,
+    'contactado': Lead.ESTADO_CONTACTADO,
+    'contacted': Lead.ESTADO_CONTACTADO,
+    'interesado': Lead.ESTADO_INTERESADO,
+    'interested': Lead.ESTADO_INTERESADO,
+    'doc_pendiente': Lead.ESTADO_DOC_PENDIENTE,
+    'documentacion pendiente': Lead.ESTADO_DOC_PENDIENTE,
+    'documentación pendiente': Lead.ESTADO_DOC_PENDIENTE,
+    'en_revision': Lead.ESTADO_EN_REVISION,
+    'en revision': Lead.ESTADO_EN_REVISION,
+    'en revisión': Lead.ESTADO_EN_REVISION,
+    'afiliado': Lead.ESTADO_AFILIADO,
+    'perdido': Lead.ESTADO_PERDIDO,
+    'no interesado': Lead.ESTADO_PERDIDO,
+    'lost': Lead.ESTADO_PERDIDO,
+}
+
+_PRIORIDAD_MAP = {
+    'alta': Lead.PRIORIDAD_ALTA,
+    'high': Lead.PRIORIDAD_ALTA,
+    'media': Lead.PRIORIDAD_MEDIA,
+    'medium': Lead.PRIORIDAD_MEDIA,
+    'normal': Lead.PRIORIDAD_MEDIA,
+    'baja': Lead.PRIORIDAD_BAJA,
+    'low': Lead.PRIORIDAD_BAJA,
 }
 
 
@@ -120,6 +151,12 @@ def _process_row(row: dict, plans_by_name: dict, actualizar: bool, default_agent
 
     plan = plans_by_name.get(plan_nombre.lower()) if plan_nombre else None
 
+    estado_raw = _get(row_lower, 'estado', 'status', 'estado_lead').lower()
+    estado = _ESTADO_MAP.get(estado_raw, Lead.ESTADO_NUEVO)
+
+    prioridad_raw = _get(row_lower, 'prioridad', 'priority').lower()
+    prioridad = _PRIORIDAD_MAP.get(prioridad_raw, Lead.PRIORIDAD_MEDIA)
+
     # Everything not recognized → datos_extra
     datos_extra = {
         k.strip(): str(v).strip()
@@ -128,13 +165,19 @@ def _process_row(row: dict, plans_by_name: dict, actualizar: bool, default_agent
     }
     extra_keys = list(datos_extra.keys())
 
+    # Look up duplicates: first by phone, then by DNI
     existing = Lead.objects.filter(telefono=phone).first()
+    if not existing and dni and dni != '0000000':
+        existing = Lead.objects.filter(dni=dni).first()
+
     if existing:
         if not actualizar:
             return 'skipped', '', extra_keys
         updated = []
         if not existing.nombre_completo and nombre:
             existing.nombre_completo = nombre; updated.append('nombre_completo')
+        if not existing.telefono and phone:
+            existing.telefono = phone; updated.append('telefono')
         if not existing.email and email:
             existing.email = email; updated.append('email')
         if not existing.localidad and localidad:
@@ -163,6 +206,8 @@ def _process_row(row: dict, plans_by_name: dict, actualizar: bool, default_agent
         notas=notas,
         origen=origen,
         plan_interes=plan,
+        estado=estado,
+        prioridad=prioridad,
         agente=default_agente,
         datos_extra=datos_extra,
     )

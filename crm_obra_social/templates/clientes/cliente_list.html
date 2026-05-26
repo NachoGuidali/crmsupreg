@@ -7,7 +7,12 @@
   <h4 class="mb-0 fw-bold"><i class="bi bi-person-check-fill text-success"></i> Clientes
     <span class="text-muted fs-6 fw-normal ms-1">({{ total }})</span>
   </h4>
-  <a href="{% url 'clientes:create' %}" class="btn btn-primary btn-sm"><i class="bi bi-person-plus"></i> Nuevo cliente</a>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{% url 'clientes:create' %}" class="btn btn-primary btn-sm"><i class="bi bi-person-plus"></i> Nuevo cliente</a>
+    {% if request.user.can_see_all_leads %}
+    <a href="{% url 'clientes:import' %}" class="btn btn-outline-success btn-sm"><i class="bi bi-cloud-upload"></i> Importar</a>
+    {% endif %}
+  </div>
 </div>
 
 <form method="get" class="mb-3">

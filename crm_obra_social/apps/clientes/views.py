@@ -1,13 +1,17 @@
+import csv
+import io
+import re
+
 from django.contrib import messages
-from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 from django.views.generic import ListView, DetailView, DeleteView
 from django.urls import reverse_lazy
 
-from apps.leads.models import CampoPersonalizado
-from .forms import ClienteForm
+from apps.leads.models import CampoPersonalizado, Plan
+from .forms import ClienteForm, ClienteImportForm
 from .models import Cliente
 
 
@@ -120,3 +124,165 @@ class ClienteDeleteView(LoginRequiredMixin, DeleteView):
     model = Cliente
     template_name = 'clientes/cliente_confirm_delete.html'
     success_url = reverse_lazy('clientes:list')
+
+
+# ── Helpers para importación ──────────────────────────────
+
+def _read_cliente_file(archivo):
+    name = archivo.name.lower()
+    if name.endswith('.xlsx') or name.endswith('.xls'):
+        import openpyxl
+        wb = openpyxl.load_workbook(archivo, read_only=True, data_only=True)
+        ws = wb.active
+        all_rows = list(ws.iter_rows(values_only=True))
+        if not all_rows:
+            return [], []
+        headers = [str(h).strip() if h is not None else f'col_{i}' for i, h in enumerate(all_rows[0])]
+        rows = []
+        for raw in all_rows[1:]:
+            if all(v is None or str(v).strip() == '' for v in raw):
+                continue
+            rows.append({headers[i]: (str(raw[i]).strip() if raw[i] is not None else '') for i in range(len(headers))})
+        return headers, rows
+    else:
+        try:
+            content = archivo.read().decode('utf-8-sig')
+        except UnicodeDecodeError:
+            archivo.seek(0)
+            content = archivo.read().decode('latin-1')
+        reader = csv.DictReader(io.StringIO(content))
+        headers = list(reader.fieldnames or [])
+        rows = [dict(r) for r in reader if any(v.strip() for v in r.values())]
+        return headers, rows
+
+
+def _get_c(row_lower, *keys, default=''):
+    for k in keys:
+        v = row_lower.get(k.lower(), '')
+        if v and str(v).strip():
+            return str(v).strip()
+    return default
+
+
+def _process_cliente_row(row, plans_by_name, actualizar):
+    row_lower = {k.lower().strip(): v for k, v in row.items()}
+
+    nombre = _get_c(row_lower, 'nombre_completo', 'nombre', 'name', 'full_name')
+    if not nombre:
+        return 'error', 'Nombre vacío'
+
+    raw_dni = re.sub(r'\D', '', _get_c(row_lower, 'dni', 'documento', 'cedula', 'rut'))
+    dni = raw_dni[:20] if raw_dni else ''
+
+    telefono = _get_c(row_lower, 'telefono', 'phone', 'tel', 'celular')
+    email = _get_c(row_lower, 'email', 'correo', 'mail')
+    localidad = _get_c(row_lower, 'localidad', 'ciudad', 'city')
+    provincia = _get_c(row_lower, 'provincia', 'province', 'region')
+    notas = _get_c(row_lower, 'notas', 'notes', 'observaciones')
+    numero_afiliado = _get_c(row_lower, 'numero_afiliado', 'afiliado', 'nro_afiliado', 'n_afiliado')
+    plan_nombre = _get_c(row_lower, 'plan', 'plan_nombre')
+    grupo_raw = _get_c(row_lower, 'grupo_familiar', 'grupo')
+    try:
+        grupo_familiar = max(1, int(grupo_raw))
+    except (ValueError, TypeError):
+        grupo_familiar = 1
+
+    plan = plans_by_name.get(plan_nombre.lower()) if plan_nombre else None
+
+    if not dni and not telefono:
+        return 'error', 'Se requiere DNI o teléfono para identificar al cliente'
+
+    # Duplicate lookup: DNI first, then phone
+    existing = None
+    if dni:
+        existing = Cliente.objects.filter(dni=dni).first()
+    if not existing and telefono:
+        existing = Cliente.objects.filter(telefono=telefono).first()
+
+    if existing:
+        if not actualizar:
+            return 'skipped', ''
+        updated = []
+        if not existing.nombre_completo and nombre:
+            existing.nombre_completo = nombre; updated.append('nombre_completo')
+        if not existing.telefono and telefono:
+            existing.telefono = telefono; updated.append('telefono')
+        if not existing.dni and dni:
+            existing.dni = dni; updated.append('dni')
+        if not existing.email and email:
+            existing.email = email; updated.append('email')
+        if not existing.localidad and localidad:
+            existing.localidad = localidad; updated.append('localidad')
+        if not existing.provincia and provincia:
+            existing.provincia = provincia; updated.append('provincia')
+        if not existing.notas and notas:
+            existing.notas = notas; updated.append('notas')
+        if not existing.numero_afiliado and numero_afiliado:
+            existing.numero_afiliado = numero_afiliado; updated.append('numero_afiliado')
+        if plan and not existing.plan:
+            existing.plan = plan; updated.append('plan')
+        if updated:
+            existing.save(update_fields=updated + ['updated_at'])
+            return 'updated', ''
+        return 'skipped', ''
+
+    Cliente.objects.create(
+        nombre_completo=nombre,
+        dni=dni,
+        telefono=telefono,
+        email=email,
+        localidad=localidad,
+        provincia=provincia,
+        notas=notas,
+        plan=plan,
+        numero_afiliado=numero_afiliado,
+        grupo_familiar=grupo_familiar,
+    )
+    return 'created', ''
+
+
+class ClienteImportView(LoginRequiredMixin, UserPassesTestMixin, View):
+    template_name = 'clientes/cliente_import.html'
+
+    def test_func(self):
+        return self.request.user.can_see_all_leads
+
+    def get(self, request):
+        return render(request, self.template_name, {'form': ClienteImportForm()})
+
+    def post(self, request):
+        form = ClienteImportForm(request.POST, request.FILES)
+        if not form.is_valid():
+            return render(request, self.template_name, {'form': form})
+
+        archivo = request.FILES['archivo']
+        actualizar = form.cleaned_data.get('actualizar_existentes', True)
+
+        try:
+            headers, rows = _read_cliente_file(archivo)
+        except Exception as e:
+            messages.error(request, f'Error leyendo el archivo: {e}')
+            return render(request, self.template_name, {'form': form})
+
+        if not rows:
+            messages.warning(request, 'El archivo está vacío o no tiene filas de datos.')
+            return render(request, self.template_name, {'form': form})
+
+        plans_by_name = {p.nombre.lower(): p for p in Plan.objects.filter(activo=True)}
+
+        stats = {'created': 0, 'updated': 0, 'skipped': 0, 'error': 0}
+        errors = []
+
+        for i, row in enumerate(rows, start=2):
+            action, msg = _process_cliente_row(row, plans_by_name, actualizar)
+            stats[action] += 1
+            if action == 'error':
+                errors.append({'fila': i, 'msg': msg, 'datos': str(row)[:120]})
+
+        return render(request, self.template_name, {
+            'form': ClienteImportForm(),
+            'resultado': True,
+            'stats': stats,
+            'errors': errors[:50],
+            'total_filas': len(rows),
+        })

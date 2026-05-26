@@ -35,6 +35,38 @@ class LeadForm(forms.ModelForm):
 
         self.fields['plan_interes'].queryset = Plan.objects.filter(activo=True)
 
+    def clean_dni(self):
+        dni = self.cleaned_data.get('dni', '').strip()
+        if not dni or dni == '0000000':
+            return dni
+        qs = Lead.objects.filter(dni=dni)
+        if self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            dup = qs.first()
+            raise ValidationError(f'Ya existe un lead con DNI {dni}: {dup.nombre_completo}.')
+        from apps.clientes.models import Cliente
+        dup_c = Cliente.objects.filter(dni=dni).first()
+        if dup_c:
+            raise ValidationError(f'Ya existe un cliente con DNI {dni}: {dup_c.nombre_completo}. Buscalo en Clientes.')
+        return dni
+
+    def clean_telefono(self):
+        telefono = self.cleaned_data.get('telefono', '').strip()
+        if not telefono:
+            return telefono
+        qs = Lead.objects.filter(telefono=telefono)
+        if self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            dup = qs.first()
+            raise ValidationError(f'Ya existe un lead con ese teléfono: {dup.nombre_completo}.')
+        from apps.clientes.models import Cliente
+        dup_c = Cliente.objects.filter(telefono=telefono).first()
+        if dup_c:
+            raise ValidationError(f'Ya existe un cliente con ese teléfono: {dup_c.nombre_completo}. Buscalo en Clientes.')
+        return telefono
+
 
 class LeadFilterForm(forms.Form):
     q = forms.CharField(required=False, label='Buscar', widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Nombre, DNI o teléfono'}))
